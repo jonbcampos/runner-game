@@ -9,8 +9,8 @@ Every hazard has exactly one correct answer:
 
 | Hazard | Answer |
 | --- | --- |
-| Ground hazard (brambles / spikes) | **JUMP** |
-| Overhead hazard (rainbow gate / beam) | **SLIDE** |
+| Ground hazard (unicorn / spike) | **JUMP** |
+| Overhead hazard (floating castle / beam) | **SLIDE** |
 | Armoured hazard (rain cloud / drone) | **SHOOT** — 2 to 5 times, count the plates |
 
 ## Running it

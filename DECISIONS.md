@@ -624,3 +624,32 @@ guarantees, or any of the 66 checks — all of which still passed on the first r
 not a likeness, and the reference photo is deliberately not in the repo, which is public. At this
 size a character is a dozen rectangles anyway, and what matters is that the *pose* reads: running,
 jumping and sliding are gameplay information.
+
+---
+
+## 37. The hazards are what the player says they are
+
+**Decided:** in the RAINBOW theme the ground hazard is a little unicorn you hop over and the
+overhead hazard is a floating castle you duck under. The background unicorn that used to gallop
+through the middle distance is gone.
+
+**Why:** Ellie played it and asked for exactly these two things — "maybe you jump over unicorns" and
+"duck under buildings". That is the best possible kind of feedback, because it costs nothing to
+honour: hitboxes, spacing, difficulty and all 66 checks are untouched. The theme boundary means a
+four-year-old can redesign the entire world and the guarantees don't notice. (66/66 still passing.)
+
+**What it forced:** the background unicorn had to go. "Some unicorns are scenery and some you must
+jump" is precisely the ambiguity the theme rule forbids, and the rule doesn't stop at the hazard
+lane — the background can teach the wrong lesson just as easily. It's now butterflies: three pixels
+across, wrong shape for every hazard family, partly occluded by the near hills.
+
+**The bug this shipped with, caught before deploy:** the castle first rendered on a `puff()` cloud,
+which centres a lozenge and so hung about 9px *below* the hitbox. The slide gap is 16px, so more
+than half of it looked solid — a perfectly legal slide would have read as a lucky escape, and the
+player would learn to distrust a gap that was always safe. Hence the rule, now written down: **a
+sprite may be smaller than its hitbox, never larger.** Overdraw upward is harmless; overdraw into
+the space the player must pass through is a lie about the rules.
+
+**Colour discipline:** purple is the unicorn's, so the castle roof is blue rather than the purple it
+naturally wanted to be. With three hazard families and one shared palette, every hue has to belong
+to exactly one answer.

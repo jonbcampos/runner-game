@@ -91,7 +91,7 @@ export const NEON_PALETTE: Palette = {
  * Bright daylight counterpart. Same structural roles, entirely different mood.
  *
  * The hazard colours still have to be mutually unmistakable — confusing a
- * bramble for a rainbow means answering with the wrong verb — so they stay far
+ * unicorn for a castle means answering with the wrong verb — so they stay far
  * apart in hue even though the whole set is much softer.
  */
 export const UNICORN_PALETTE: Palette = {
@@ -112,7 +112,8 @@ export const UNICORN_PALETTE: Palette = {
   shot: '#fff06a',
   shotCore: '#ffffff',
 
-  spike: '#3f7a36',
+  /** The unicorn's mane. Purple is reserved for it — see unicorn.ts. */
+  spike: '#8f5cff',
   beam: '#ff4f9c',
   drone: '#8b98b4',
   droneShield: '#c3cfe2',

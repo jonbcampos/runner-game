@@ -10,17 +10,23 @@ import type { Theme } from './theme';
  * Ellie's Rainbow Run — the daylight theme.
  *
  * Every hazard keeps its exact hitbox and its exact answer; only the story
- * changes. A ground spike becomes a bramble patch, an overhead beam becomes a
- * low rainbow you duck under, a shielded drone becomes a rain cloud you zap.
- * That's the whole point of the theme boundary: the 66 guarantees in the
- * harness are about geometry and timing, and none of them care that the thing
- * you're jumping is now covered in flowers.
+ * changes. A ground spike becomes a little unicorn you hop over, an overhead
+ * beam becomes a floating castle you duck under, a shielded drone becomes a
+ * rain cloud you zap. That's the whole point of the theme boundary: the 66
+ * guarantees in the harness are about geometry and timing, and none of them
+ * care that the thing you're jumping now has a horn.
  *
  * The one hard rule when authoring a theme: **the three hazard families must
  * stay instantly distinguishable from one another.** Getting them confused
  * means answering with the wrong verb, which is the worst mistake this game can
- * cause. Hence green-on-the-ground, pink-arc-overhead, grey-cloud-with-rain —
- * different colours, different silhouettes, different parts of the screen.
+ * cause. Hence small-purple-on-the-ground, tall-pink-overhead,
+ * grey-cloud-with-a-rain-column — different colours, different silhouettes,
+ * different parts of the screen.
+ *
+ * The corollary, learned the moment unicorns entered the hazard lane: nothing
+ * in the *background* may look like a hazard either. There used to be a unicorn
+ * galloping through the middle distance, and it had to go — "some unicorns are
+ * scenery and some you must jump" is precisely the ambiguity the rule forbids.
  */
 
 const scratch: Aabb = { x: 0, y: 0, w: 0, h: 0 };
@@ -37,7 +43,7 @@ function drawBackground(ctx: CanvasRenderingContext2D, distance: number, elapsed
   drawRainbowArc(ctx, distance * 0.06);
   drawClouds(ctx, distance * 0.14, 34, 0.55);
   drawHills(ctx, distance * 0.3, PALETTE.midStructure, 46, 30);
-  drawUnicorn(ctx, distance, elapsed);
+  drawButterflies(ctx, distance, elapsed);
   drawHills(ctx, distance * 0.55, PALETTE.nearStructure, 62, 18);
   drawMeadow(ctx, distance);
 }
@@ -114,40 +120,36 @@ function drawHills(
 }
 
 /**
- * A unicorn galloping along the middle distance.
+ * Butterflies drifting through the middle distance.
  *
- * In the background rather than underfoot on purpose: it's the thing that makes
- * the world feel like Ellie's, but it must never be mistaken for something you
- * have to answer. Nothing in the hazard lane is ever white with a horn.
+ * The background needs *something* moving at its own parallax rate or the world
+ * reads as a painted backdrop. This used to be a galloping unicorn, which was
+ * the nicest thing in the scene right up until unicorns became the hazard you
+ * jump — at which point it was actively teaching the wrong lesson. Butterflies
+ * are three pixels across, wrong shape for every hazard family, and partly
+ * occluded by the near hills, so they can't be read as anything to answer.
  */
-function drawUnicorn(ctx: CanvasRenderingContext2D, distance: number, elapsed: number): void {
-  const period = 900;
-  const x = SCREEN.w + 60 - ((distance * 0.42) % (period + SCREEN.w + 120));
-  if (x < -70 || x > SCREEN.w + 70) return;
+function drawButterflies(ctx: CanvasRenderingContext2D, distance: number, elapsed: number): void {
+  const spacing = 118;
+  const offset = distance * 0.42;
+  const start = Math.floor(offset / spacing) * spacing;
+  for (let i = 0; i < Math.ceil(SCREEN.w / spacing) + 2; i++) {
+    const worldX = start + i * spacing;
+    const x = worldX - offset;
+    if (x < -20 || x > SCREEN.w + 20) continue;
 
-  const bob = Math.sin(elapsed * 9) * 2;
-  const y = GROUND_Y - 54 + bob;
-  const body = '#ffffff';
-  const mane = '#ff8fae';
+    const seed = Math.abs(Math.floor(worldX / spacing)) * 2654435761;
+    const y = GROUND_Y - 34 - ((seed >>> 4) % 40) + Math.sin(elapsed * 3 + i) * 5;
+    const colours = ['#fff06a', '#ff8fae', '#c79bff', '#ffffff'];
+    // Wings flap by alternating which side is extended.
+    const flap = Math.floor(elapsed * 11 + i) % 2;
 
-  ctx.fillStyle = alpha(body, 0.9);
-  ctx.fillRect(x, y, 30, 15); // body
-  ctx.fillRect(x + 24, y - 9, 10, 11); // head
-  ctx.fillRect(x + 20, y - 5, 6, 5); // neck
-
-  // Legs, in a two-frame gallop tied to distance so it can't drift.
-  const step = Math.floor(distance / 14) % 2;
-  ctx.fillRect(x + 3, y + 14, 4, 10 - step * 3);
-  ctx.fillRect(x + 10, y + 14, 4, 7 + step * 3);
-  ctx.fillRect(x + 19, y + 14, 4, 10 - step * 3);
-  ctx.fillRect(x + 25, y + 14, 4, 7 + step * 3);
-
-  // Horn, mane and tail — the bits that make it a unicorn and not a horse.
-  ctx.fillStyle = alpha('#fff06a', 0.95);
-  ctx.fillRect(x + 32, y - 15, 3, 7);
-  ctx.fillStyle = alpha(mane, 0.9);
-  ctx.fillRect(x + 20, y - 10, 6, 12);
-  ctx.fillRect(x - 5, y - 2, 6, 14);
+    ctx.fillStyle = alpha(colours[(seed >>> 9) % colours.length]!, 0.85);
+    ctx.fillRect(Math.round(x), Math.round(y - flap), 2, 3);
+    ctx.fillRect(Math.round(x) + 3, Math.round(y - 1 + flap), 2, 3);
+    ctx.fillStyle = alpha('#5a4470', 0.7);
+    ctx.fillRect(Math.round(x) + 2, Math.round(y), 1, 3);
+  }
 }
 
 /** Ground plane: grass with a bright lip and scattered flowers. */
@@ -295,10 +297,10 @@ function drawObstacles(
     }
     switch (item.kind) {
       case 'spike':
-        drawBramble(ctx, x, item);
+        drawLittleUnicorn(ctx, x, item, state.distance);
         break;
       case 'beam':
-        drawRainbowGate(ctx, x, item, state.elapsed);
+        drawCastle(ctx, x, item, state.elapsed);
         break;
       case 'drone':
         drawRainCloud(ctx, x, item, state.elapsed);
@@ -310,57 +312,114 @@ function drawObstacles(
   }
 }
 
-/** JUMP. Thorny green bush — sits on the ground, unmistakably not a cloud. */
-function drawBramble(ctx: CanvasRenderingContext2D, x: number, item: Obstacle): void {
-  const baseY = item.y + item.h;
-  ctx.fillStyle = PALETTE.spike;
-  ctx.fillRect(x, item.y + 6, item.w, item.h - 6);
+/**
+ * JUMP. A little unicorn standing in the lane — Ellie's own suggestion.
+ *
+ * Only 20x22, which is roughly a third of Ellie's height, and that smallness is
+ * doing real work: it's the visual promise that a plain hop clears it. It faces
+ * left, toward the player, because a creature turned to meet you reads as
+ * something to deal with, and it fixes the direction of the horn — the one
+ * silhouette detail that survives at speed.
+ */
+function drawLittleUnicorn(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  item: Obstacle,
+  distance: number,
+): void {
+  const y = item.y;
+  const body = '#fdf6ff';
+  const mane = PALETTE.spike;
 
-  // Thorns along the top, which is the edge that actually matters.
-  ctx.beginPath();
-  const teeth = 4;
-  const toothW = item.w / teeth;
-  for (let i = 0; i < teeth; i++) {
-    const left = x + i * toothW;
-    ctx.moveTo(left, item.y + 8);
-    ctx.lineTo(left + toothW / 2, item.y);
-    ctx.lineTo(left + toothW, item.y + 8);
-  }
-  ctx.closePath();
-  ctx.fill();
+  // Tail first, so the body edge stays clean.
+  ctx.fillStyle = mane;
+  ctx.fillRect(x + item.w - 4, y + 8, 4, 9);
 
-  // A few berries, so it reads as a bramble rather than a hedge.
-  ctx.fillStyle = '#ff4f9c';
-  ctx.fillRect(x + 3, item.y + 11, 3, 3);
-  ctx.fillRect(x + item.w - 7, item.y + 14, 3, 3);
-  ctx.fillStyle = alpha('#2c5626', 0.8);
-  ctx.fillRect(x, baseY - 3, item.w, 3);
+  ctx.fillStyle = body;
+  ctx.fillRect(x + 3, y + 9, item.w - 6, 8); // barrel
+  ctx.fillRect(x + 1, y + 3, 8, 7); // head
+  ctx.fillRect(x + 6, y + 7, 5, 4); // neck
+
+  // Legs, trotting in place — tied to distance so they can't drift off-tempo.
+  const step = Math.floor(distance / 8) % 2;
+  ctx.fillRect(x + 4, y + 16, 3, 6 - step * 2);
+  ctx.fillRect(x + 9, y + 16, 3, 4 + step * 2);
+  ctx.fillRect(x + 14, y + 16, 3, 6 - step * 2);
+
+  // Mane down the neck, and the horn: gold, and the only pointed thing here.
+  ctx.fillStyle = mane;
+  ctx.fillRect(x + 7, y + 2, 4, 9);
+  ctx.fillStyle = '#fff06a';
+  ctx.fillRect(x + 3, y - 3, 3, 6);
+
+  ctx.fillStyle = '#5a4470';
+  ctx.fillRect(x + 2, y + 5, 2, 2); // eye
 }
 
-/** SLIDE. A low rainbow gate — the empty space beneath it is the instruction. */
-function drawRainbowGate(
+/**
+ * SLIDE. A castle floating over the lane — the gap beneath it is the
+ * instruction, and Ellie asked for buildings.
+ *
+ * It floats rather than standing on legs, and that's not whimsy: the hitbox is
+ * a single rectangle hanging 16px above the ground, so any pillar drawn down to
+ * the grass would be a lie — you'd slide straight through it. A castle on a
+ * cloud is the shape that tells the truth about the hitbox, and in this world
+ * it needs no explanation.
+ */
+function drawCastle(
   ctx: CanvasRenderingContext2D,
   x: number,
   item: Obstacle,
   time: number,
 ): void {
-  const bands = ['#ff4f9c', '#ff8a5c', '#fff06a', '#7fe08f', '#7fc7ff', '#c79bff'];
-  const bandH = item.h / bands.length;
-  bands.forEach((colour, i) => {
-    ctx.fillStyle = colour;
-    ctx.fillRect(x, item.y + i * bandH, item.w, Math.ceil(bandH));
-  });
+  const w = item.w;
+  const y = item.y;
+  const bottom = y + item.h;
+  const wall = PALETTE.beam;
 
-  // Sparkles drifting down it, so it reads as magic rather than as masonry.
-  ctx.fillStyle = alpha('#ffffff', 0.75);
+  // Roof: a stepped spire. Blue, not purple — purple is the unicorn's colour in
+  // this theme and no other hazard gets to borrow it.
+  ctx.fillStyle = '#4a6fd0';
+  ctx.fillRect(x + w / 2 - 3, y + 2, 6, 6);
+  ctx.fillRect(x + w / 2 - 7, y + 6, 14, 5);
+  ctx.fillRect(x + 3, y + 10, w - 6, 6);
+
+  // Pennant on top, flapping.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(x + w / 2 - 1, y - 6, 1, 8);
+  ctx.fillStyle = '#fff06a';
+  ctx.fillRect(x + w / 2, y - 6 + (Math.floor(time * 8) % 2), 6, 4);
+
+  // Walls, with battlements just under the roof.
+  ctx.fillStyle = wall;
+  ctx.fillRect(x + 2, y + 16, w - 4, item.h - 24);
   for (let i = 0; i < 4; i++) {
-    const offset = (time * 34 + i * 17) % item.h;
-    ctx.fillRect(x + 3 + ((i * 7) % (item.w - 6)), item.y + offset, 2, 2);
+    ctx.fillRect(x + 3 + i * 8, y + 13, 5, 4);
   }
 
-  // Bright underside: exactly where the danger stops.
+  // Arched windows, lit — three of them, so it reads as lived-in.
+  ctx.fillStyle = '#fff06a';
+  ctx.fillRect(x + 7, y + 24, 5, 8);
+  ctx.fillRect(x + w - 12, y + 24, 5, 8);
+  ctx.fillRect(x + w / 2 - 3, y + 38, 6, 9);
+  ctx.fillStyle = alpha('#ffffff', 0.6);
+  ctx.fillRect(x + 7, y + 24, 5, 2);
+  ctx.fillRect(x + w - 12, y + 24, 5, 2);
+
+  // The cloud it rests on, which is also the bright underside cue: exactly
+  // where the danger stops and the slide gap begins.
+  //
+  // Drawn with explicit rects strictly inside the hitbox rather than with
+  // puff(), which centres a lozenge and would hang ~9px below the bottom edge.
+  // The slide gap is only 16px, so that overhang covered half of it: the player
+  // would be squeezing through a space that looks solid, and a clean slide
+  // would read as a lucky escape. Sprites may be smaller than their hitbox —
+  // never larger.
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(x - 2, item.y + item.h - 2, item.w + 4, 2);
+  ctx.fillRect(x, bottom - 13, w, 7);
+  ctx.fillRect(x + 3, bottom - 7, w - 6, 5);
+  ctx.fillRect(x + w - 9, bottom - 8, 7, 4);
+  ctx.fillRect(x, bottom - 2, w, 2);
 }
 
 /** SHOOT. Rain cloud with a downpour column — armour plates are hailstones. */
