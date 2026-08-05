@@ -5,6 +5,8 @@ export interface Shot {
   x: number;
   y: number;
   prevX: number;
+  /** Distance covered so far, so the shot can expire at its range limit. */
+  travelled: number;
   active: boolean;
 }
 
@@ -22,7 +24,7 @@ export class ShotPool {
 
   constructor() {
     for (let i = 0; i < SHOT.poolSize; i++) {
-      this.shots.push({ x: 0, y: 0, prevX: 0, active: false });
+      this.shots.push({ x: 0, y: 0, prevX: 0, travelled: 0, active: false });
     }
   }
 
@@ -32,6 +34,7 @@ export class ShotPool {
       shot.x = x;
       shot.y = y;
       shot.prevX = x;
+      shot.travelled = 0;
       shot.active = true;
       return;
     }
@@ -40,12 +43,18 @@ export class ShotPool {
     // normal play, and stealing the oldest shot would look worse than nothing.
   }
 
-  update(dt: number): void {
+  /**
+   * @param range How far a shot may travel before fizzling out. Passed in
+   * rather than read from config so the long-shot powerup can extend it.
+   */
+  update(dt: number, range: number): void {
     for (const shot of this.shots) {
       if (!shot.active) continue;
       shot.prevX = shot.x;
-      shot.x += SHOT.speed * dt;
-      if (shot.x > SCREEN.w + SHOT.width) shot.active = false;
+      const step = SHOT.speed * dt;
+      shot.x += step;
+      shot.travelled += step;
+      if (shot.travelled >= range || shot.x > SCREEN.w + SHOT.width) shot.active = false;
     }
   }
 

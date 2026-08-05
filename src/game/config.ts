@@ -202,6 +202,20 @@ export const SHOT = {
   height: 3,
   /** Pool size. More than can ever be alive at once given speed + cooldown. */
   poolSize: 32,
+
+  /**
+   * How far a shot travels before it fizzles out, in virtual pixels.
+   *
+   * Roughly half the design width. An unlimited-range gun makes shooting a
+   * hold-the-button non-decision: you fire the moment a drone appears and it
+   * dies somewhere off in the distance. Capping the reach means you have to let
+   * the target come to you, which turns the third verb into a timing read like
+   * the other two — and leaves obvious room for a long-shot powerup to matter.
+   */
+  range: 230,
+
+  /** Damage per shot. The stronger-gun powerup raises this. */
+  damage: 1,
 } as const;
 
 // --- World / pacing ---------------------------------------------------------
@@ -216,7 +230,15 @@ export const WORLD = {
   speedCap: 340,
 
   /** Seconds of running per sector. */
-  sectorLength: 25,
+  sectorLength: 20,
+
+  /**
+   * Boss cadence. The first arrives at sector 3 (~40s in) and then every
+   * `bossEvery` sectors. Late enough to be a reward for a good run, early
+   * enough that a decent player actually sees one.
+   */
+  bossFirstSector: 3,
+  bossEvery: 2,
 } as const;
 
 // --- Obstacles --------------------------------------------------------------
@@ -265,6 +287,56 @@ export const OBSTACLE = {
 
   /** Hazard hurtboxes are inset too — same fairness reason as the player's. */
   hurtboxInset: 2,
+} as const;
+
+// --- Boss -------------------------------------------------------------------
+
+/**
+ * The boss alternates between two distances, and that's the whole fight.
+ *
+ * Far away it launches ordinary hazards, so the three verbs still answer
+ * everything and no new vocabulary is needed. Then it closes in and opens its
+ * core — and because shots only reach SHOT.range, closing in is the *only*
+ * time you can hurt it. The shot-range cap and the boss design justify each
+ * other rather than each being an isolated rule.
+ */
+export const BOSS = {
+  width: 54,
+  height: 46,
+  /**
+   * Hover height while it's at range — above the beam lane, out of reach.
+   *
+   * It does NOT stay there. The player's gun fires from roughly 15px above the
+   * ground, so a boss parked at this altitude is literally unshootable; shots
+   * sail underneath it. It descends to `nearBottomGap` when it closes in, which
+   * is what makes the opening an opening.
+   */
+  hoverY: 96,
+
+  /** Gap between the boss's underside and the ground while it's closed in. */
+  nearBottomGap: 5,
+
+  hp: 10,
+  /** Easy mode gets a shorter fight rather than a different one. */
+  hpScale: { kid: 0.6, normal: 1, hard: 1.2 },
+
+  /** Distance from the right edge while launching hazards. */
+  farInset: 74,
+  /** Absolute x it closes to when vulnerable — inside SHOT.range of the muzzle. */
+  nearX: 250,
+
+  enterDuration: 1.3,
+  /** Hazards launched per attack run. */
+  attacksPerRun: 3,
+  /** Authored gap between launches; the real gap also respects the verb floor. */
+  attackGap: 1.15,
+  closeDuration: 0.75,
+  vulnerableDuration: 1.3,
+  retreatDuration: 0.75,
+  deathDuration: 1.6,
+
+  /** Healed on victory, capped at the run's max. */
+  healOnDefeat: 1,
 } as const;
 
 // --- Difficulty -------------------------------------------------------------

@@ -3,6 +3,7 @@ import {
   FIXED_DT,
   PLAYER,
   PLAYER_X,
+  SHOT,
   WORLD,
   type DifficultyId,
 } from '../game/config';
@@ -235,6 +236,84 @@ function trialDirectorSpacing(): { difficulty: DifficultyId; violations: number;
   return out;
 }
 
+/**
+ * A boss fight must be winnable by shooting during its openings.
+ *
+ * Worth a dedicated test because the failure mode is silent and total: the boss
+ * originally hovered ~96px up while the player's gun fires from ~15px, so every
+ * shot sailed underneath and the fight was unwinnable. Nothing errored, nothing
+ * looked wrong, the health bar just never moved. This holds the boss forever
+ * within reach of the muzzle.
+ */
+function trialBossFight(difficultyId: DifficultyId): { killed: boolean; seconds: number } {
+  const state = new GameState();
+  const input = new FakeInput();
+  state.start(difficultyId, 3);
+  state.boss.spawn(DIFFICULTIES[difficultyId]);
+
+  // Hold fire the entire time. A competent player shoots at every opening, so
+  // if constant fire can't win, no input pattern can.
+  input.press('shoot');
+
+  let elapsed = 0;
+  for (let step = 0; step < Math.ceil(90 / FIXED_DT); step++) {
+    // Immortal player: this tests the boss, not the player's dodging.
+    state.player.hp = 99;
+    state.player.maxHp = 99;
+    state.update(FIXED_DT, input as never);
+    elapsed += FIXED_DT;
+    if (state.boss.phase === 'dying' || !state.boss.active) {
+      return { killed: true, seconds: elapsed };
+    }
+  }
+  return { killed: false, seconds: elapsed };
+}
+
+/**
+ * A shuttered boss must be immune.
+ *
+ * Asserted directly against `takeHit` rather than inferred from a running
+ * fight: the boss can open and take a legal hit within a single tick, so
+ * sampling phase around `update` races and reports false violations. Testing
+ * the guard itself is both simpler and actually correct.
+ */
+function trialBossInvulnerability(): boolean {
+  const state = new GameState();
+  state.start('normal', 3, false);
+  const boss = state.boss;
+  boss.spawn(DIFFICULTIES.normal);
+
+  const startingHp = boss.hp;
+  // Every phase that is not 'vulnerable' must reject damage.
+  for (const phase of ['entering', 'attacking', 'closing', 'retreating'] as const) {
+    boss.phase = phase;
+    boss.takeHit(99);
+    if (boss.hp !== startingHp) return false;
+  }
+  boss.phase = 'vulnerable';
+  boss.takeHit(1);
+  return boss.hp === startingHp - 1;
+}
+
+/** Shots must actually expire at their range limit. */
+function trialShotRange(): { maxTravel: number; range: number; ok: boolean } {
+  const state = new GameState();
+  const input = new FakeInput();
+  state.start('normal', 1, false);
+  input.press('shoot');
+
+  let maxTravel = 0;
+  for (let step = 0; step < Math.ceil(4 / FIXED_DT); step++) {
+    state.update(FIXED_DT, input as never);
+    for (const shot of state.shots.shots) {
+      if (shot.active) maxTravel = Math.max(maxTravel, shot.travelled);
+    }
+  }
+  // Within one step of the limit, and definitely not past it.
+  const step = SHOT.speed * FIXED_DT;
+  return { maxTravel, range: state.shotRange, ok: maxTravel <= state.shotRange && maxTravel > state.shotRange - step * 2 };
+}
+
 export function verify(): TrialResult[] {
   const kinds: ObstacleKind[] = ['spike', 'beam', 'drone'];
   const verbs: (Action | 'nothing')[] = ['jump', 'slide', 'shoot', 'nothing'];
@@ -285,6 +364,31 @@ export function verify(): TrialResult[] {
         : `[verify] director emitted ${row.violations} unsurvivable gaps on ${row.difficulty}`,
     );
   }
+
+  const range = trialShotRange();
+  results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
+    survived: range.ok, expected: true, pass: range.ok });
+  console.log(
+    range.ok
+      ? `[verify] shot range enforced (max travel ${Math.round(range.maxTravel)} of ${range.range})`
+      : `[verify] shot range BROKEN: travelled ${Math.round(range.maxTravel)}, limit ${range.range}`,
+  );
+
+  for (const difficultyId of ['kid', 'normal', 'hard'] as DifficultyId[]) {
+    const fight = trialBossFight(difficultyId);
+    results.push({ difficulty: difficultyId, kind: 'drone', verb: 'shoot',
+      survived: fight.killed, expected: true, pass: fight.killed });
+    console.log(
+      fight.killed
+        ? `[verify] boss on ${difficultyId} beaten in ${fight.seconds.toFixed(1)}s`
+        : `[verify] boss on ${difficultyId} UNWINNABLE — survived ${fight.seconds.toFixed(0)}s of constant fire`,
+    );
+  }
+
+  const shuttered = trialBossInvulnerability();
+  results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
+    survived: shuttered, expected: true, pass: shuttered });
+  if (!shuttered) console.error('[verify] boss takes damage while shuttered');
 
   const slide = trialSlideHold();
   for (const [name, ok] of Object.entries(slide)) {

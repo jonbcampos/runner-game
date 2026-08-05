@@ -30,7 +30,54 @@ export function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
   });
 
   drawHearts(ctx, state);
+  drawBossBar(ctx, state);
   drawSectorAnnouncement(ctx, state);
+}
+
+/**
+ * Boss health, across the top.
+ *
+ * Segmented rather than a smooth bar: with only ~10 hits in the fight, discrete
+ * pips let you count exactly how many more openings you need, which turns the
+ * fight into a plan instead of a guess.
+ */
+function drawBossBar(ctx: CanvasRenderingContext2D, state: GameState): void {
+  const boss = state.boss;
+  if (!boss.active || boss.phase === 'dying') return;
+
+  const barW = Math.min(220, SCREEN.w - 120);
+  const x = SCREEN.w / 2 - barW / 2;
+  const y = 44;
+  const segments = boss.maxHp;
+  const gap = 1;
+  const segW = (barW - gap * (segments - 1)) / segments;
+
+  drawText(ctx, 'SENTINEL', SCREEN.w / 2, y - 9, {
+    size: 8,
+    color: PALETTE.drone,
+    align: 'center',
+  });
+
+  for (let i = 0; i < segments; i++) {
+    const sx = x + i * (segW + gap);
+    if (i < boss.hp) {
+      ctx.fillStyle = boss.hitFlash > 0 ? PALETTE.playerCore : PALETTE.drone;
+      ctx.fillRect(sx, y, segW, 5);
+    } else {
+      ctx.fillStyle = alpha(PALETTE.drone, 0.18);
+      ctx.fillRect(sx, y, segW, 5);
+    }
+  }
+
+  // Name the opening. Without this the vulnerable window reads as random.
+  if (boss.vulnerable) {
+    drawText(ctx, 'CORE EXPOSED — FIRE', SCREEN.w / 2, y + 15, {
+      size: 8,
+      color: PALETTE.shot,
+      align: 'center',
+      glow: true,
+    });
+  }
 }
 
 /**
@@ -41,6 +88,19 @@ export function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
  * turns "this is harder now" into information instead of frustration.
  */
 function drawSectorAnnouncement(ctx: CanvasRenderingContext2D, state: GameState): void {
+  if (state.bossVictoryFlash > 0) {
+    const fade = Math.min(1, state.bossVictoryFlash / 0.5);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    drawText(ctx, 'SENTINEL DOWN', SCREEN.w / 2, VIRTUAL_H / 2 - 30, {
+      size: 20,
+      color: PALETTE.shot,
+      align: 'center',
+      glow: true,
+    });
+    ctx.restore();
+    return;
+  }
   if (state.sectorFlash <= 0 || state.sector <= 1) return;
 
   // Fade in fast, hold, then fade out over the last third.

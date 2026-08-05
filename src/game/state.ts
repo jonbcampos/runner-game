@@ -1,4 +1,5 @@
 import {
+  BOSS,
   DIFFICULTIES,
   GROUND_Y,
   JUICE,
@@ -11,6 +12,7 @@ import {
   type Difficulty,
   type DifficultyId,
 } from './config';
+import { Boss } from './boss';
 import { inset, overlaps, type Aabb } from './collision';
 import { Director } from './director';
 import { ObstacleField } from './obstacles';
@@ -31,7 +33,10 @@ export type GameEventType =
   | 'hit'
   | 'kill'
   | 'death'
-  | 'sector';
+  | 'sector'
+  | 'boss-arrive'
+  | 'boss-hurt'
+  | 'boss-die';
 
 export interface GameEvent {
   type: GameEventType;
@@ -87,6 +92,10 @@ export class GameState {
   }));
   private eventCount = 0;
 
+  readonly boss = new Boss();
+  /** Counts down after a boss dies, driving the victory banner. */
+  bossVictoryFlash = 0;
+
   readonly director = new Director();
   /**
    * Whether the director is spawning. Off for the contract tests, which place a
@@ -102,6 +111,16 @@ export class GameState {
 
   get metres(): number {
     return Math.floor(this.distance / PX_PER_METRE);
+  }
+
+  /** Current shot reach. A plain getter for now; powerups will scale it. */
+  get shotRange(): number {
+    return SHOT.range;
+  }
+
+  /** Damage per shot. Same story — the stronger-gun powerup raises it. */
+  get shotDamage(): number {
+    return SHOT.damage;
   }
 
   private emit(type: GameEventType, x = 0, y = 0): void {
@@ -130,8 +149,10 @@ export class GameState {
     this.hitstop = 0;
     this.shake = 0;
     this.sectorFlash = 0;
+    this.bossVictoryFlash = 0;
     this.eventCount = 0;
 
+    this.boss.reset();
     this.director.reset(this.difficulty);
     this.player.reset(this.difficulty.hp, this.scrollSpeed);
     this.obstacles.reset();
@@ -167,9 +188,12 @@ export class GameState {
 
     this.distance += this.scrollSpeed * dt;
     this.obstacles.update(dt, this.scrollSpeed);
-    this.shots.update(dt);
+    this.shots.update(dt, this.shotRange);
+
+    if (this.bossVictoryFlash > 0) this.bossVictoryFlash -= dt;
 
     if (!this.player.dead) {
+      this.updateBoss(dt);
       this.updateSpawning(dt);
       this.resolveShotHits();
       this.resolvePlayerHits();
@@ -186,6 +210,10 @@ export class GameState {
       // game gets harder for reasons the player can't name.
       this.sectorFlash = 1.8;
       this.emit('sector');
+      if (this.directorEnabled && this.isBossSector(sector) && !this.boss.active) {
+        this.boss.spawn(this.difficulty);
+        this.emit('boss-arrive');
+      }
     }
     this.sector = sector;
     const target =
@@ -194,8 +222,33 @@ export class GameState {
     this.scrollSpeed = Math.min(target, WORLD.speedCap * this.difficulty.speedScale);
   }
 
+  private isBossSector(sector: number): boolean {
+    if (sector < WORLD.bossFirstSector) return false;
+    return (sector - WORLD.bossFirstSector) % WORLD.bossEvery === 0;
+  }
+
+  private updateBoss(dt: number): void {
+    if (!this.boss.active) return;
+    const wasAlive = this.boss.phase !== 'dying' && this.boss.phase !== 'done';
+
+    this.boss.update(dt, { scrollSpeed: this.scrollSpeed, rng: this.rng }, (kind, x) => {
+      this.obstacles.spawn(kind, x);
+    });
+
+    if (wasAlive && this.boss.phase === 'dying') {
+      this.bossVictoryFlash = 2.2;
+      this.emit('boss-die', this.boss.x + BOSS.width / 2, this.boss.y + BOSS.height / 2);
+      // A heal is the reward. Distance alone is a weak payoff for the hardest
+      // thing in the run, and on Hard (1 HP) it's the only way to ever recover.
+      if (this.player.hp < this.player.maxHp) this.player.hp += BOSS.healOnDefeat;
+    }
+  }
+
   private updateSpawning(dt: number): void {
     if (!this.directorEnabled) return;
+    // The director stays quiet during a fight; the boss is the only source of
+    // hazards, so the screen can't get double-loaded.
+    if (this.boss.blocking) return;
     this.director.update(
       dt,
       {
@@ -212,6 +265,18 @@ export class GameState {
     for (const shot of this.shots.shots) {
       if (!shot.active) continue;
       ShotPool.box(shot, this.boxA);
+
+      if (this.boss.vulnerable) {
+        this.boss.bounds(this.boxB);
+        if (overlaps(this.boxA, this.boxB)) {
+          shot.active = false;
+          this.boss.takeHit(this.shotDamage);
+          this.hitstop = Math.max(this.hitstop, JUICE.killHitstopDuration);
+          this.shake = Math.max(this.shake, JUICE.shakeOnKill);
+          this.emit('boss-hurt', shot.x, shot.y);
+          continue;
+        }
+      }
 
       for (const item of this.obstacles.items) {
         if (!ObstacleField.isHazardous(item)) continue;

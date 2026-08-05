@@ -23,6 +23,7 @@ export const neonRenderer: Renderer = {
     }
 
     drawBackground(ctx, state.distance);
+    drawBoss(ctx, state, interpolation);
     drawObstacles(ctx, state, interpolation);
     drawShots(ctx, state, interpolation);
     drawPlayer(ctx, state, interpolation);
@@ -248,6 +249,78 @@ function drawDeath(ctx: CanvasRenderingContext2D, item: Obstacle, x: number): vo
   ctx.strokeStyle = alpha(PALETTE.drone, fade * 0.6);
   ctx.lineWidth = 1;
   ctx.strokeRect(cx - spread, cy - spread, spread * 2, spread * 2);
+}
+
+/**
+ * The boss. Its silhouette has to say which phase it's in from across the
+ * screen, because the phase is the entire fight: shuttered core means survive,
+ * open core means punish.
+ */
+function drawBoss(ctx: CanvasRenderingContext2D, state: GameState, interpolation: number): void {
+  const boss = state.boss;
+  if (!boss.active) return;
+
+  boss.bounds(scratch, interpolation);
+  const { x, y, w, h } = scratch;
+  const dying = boss.phase === 'dying';
+  const flashing = boss.hitFlash > 0;
+
+  if (dying) {
+    // Comes apart in expanding rings rather than simply vanishing.
+    const t = 1 - Math.max(0, boss.hitFlash);
+    for (let i = 0; i < 7; i++) {
+      const spread = 10 + i * 9 + Math.sin(state.elapsed * 20 + i) * 4;
+      ctx.fillStyle = alpha(i % 2 ? PALETTE.shot : PALETTE.drone, Math.max(0, 0.5 - i * 0.06));
+      ctx.fillRect(x + w / 2 - spread, y + h / 2 - spread, spread * 2, spread * 2);
+    }
+    ctx.fillStyle = alpha(PALETTE.playerCore, 0.7);
+    ctx.fillRect(x + w / 4, y + h / 4, w / 2, h / 2);
+    void t;
+    return;
+  }
+
+  const shell = flashing ? PALETTE.playerCore : PALETTE.drone;
+
+  // Engine wash behind it, stronger while it's closing in on you.
+  const thrust = boss.phase === 'closing' || boss.phase === 'retreating' ? 22 : 12;
+  ctx.fillStyle = alpha(PALETTE.shot, 0.18);
+  ctx.fillRect(x + w, y + h * 0.3, thrust, h * 0.4);
+
+  glowRect(ctx, x, y, w, h, shell);
+
+  // Angled shoulders, so it reads as a machine rather than a box.
+  ctx.fillStyle = PALETTE.skyTop;
+  ctx.fillRect(x + w - 6, y, 6, 8);
+  ctx.fillRect(x + w - 6, y + h - 8, 6, 8);
+  ctx.fillRect(x, y, 5, 6);
+  ctx.fillRect(x, y + h - 6, 5, 6);
+
+  // The core. Shuttered and dark most of the time; wide open and pulsing
+  // during the vulnerable window, which is the only cue that matters.
+  const coreX = x + 10;
+  const coreY = y + h / 2 - 9;
+  if (boss.vulnerable) {
+    const pulse = 0.7 + Math.sin(state.elapsed * 16) * 0.3;
+    ctx.fillStyle = alpha(PALETTE.shot, 0.35 * pulse);
+    ctx.fillRect(coreX - 6, coreY - 6, 30, 30);
+    ctx.fillStyle = alpha(PALETTE.shot, pulse);
+    ctx.fillRect(coreX, coreY, 18, 18);
+    ctx.fillStyle = PALETTE.playerCore;
+    ctx.fillRect(coreX + 5, coreY + 5, 8, 8);
+  } else {
+    ctx.fillStyle = PALETTE.skyBottom;
+    ctx.fillRect(coreX, coreY, 18, 18);
+    // Closed shutters.
+    ctx.fillStyle = alpha(PALETTE.drone, 0.8);
+    for (let i = 0; i < 3; i++) ctx.fillRect(coreX, coreY + i * 7, 18, 4);
+  }
+
+  // Telegraph: the whole shell flares just before an attack run launches.
+  if (boss.phase === 'attacking') {
+    ctx.strokeStyle = alpha(PALETTE.spike, 0.5 + Math.sin(state.elapsed * 12) * 0.3);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 3.5, y - 3.5, w + 7, h + 7);
+  }
 }
 
 /** Exported for the screens layer, which dims the world behind its overlays. */

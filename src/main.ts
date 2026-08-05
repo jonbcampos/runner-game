@@ -122,6 +122,18 @@ function presentEvent(event: GameEvent): void {
     case 'sector':
       audio.play('sector');
       break;
+    case 'boss-arrive':
+      audio.play('sector');
+      break;
+    case 'boss-hurt':
+      audio.play('kill');
+      particles.shotImpact(event.x, event.y, random);
+      break;
+    case 'boss-die':
+      audio.play('death');
+      particles.droneDeath(event.x, event.y, random);
+      particles.droneDeath(event.x + 10, event.y + 8, random);
+      break;
   }
 }
 
