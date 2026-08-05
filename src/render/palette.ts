@@ -25,6 +25,21 @@ export const PALETTE = {
   drone: '#ff6b4d',
   droneShield: '#ff9d6b',
 
+  /**
+   * Armour tiers, indexed by hit points.
+   *
+   * A heat ramp — the tougher it is, the hotter it burns — so the ordering is
+   * guessable rather than memorised. Deliberately kept clear of the spike pink
+   * and beam purple, since confusing a drone for either would mean answering
+   * with the wrong verb entirely.
+   */
+  droneTier: {
+    2: '#ff8a4d',
+    3: '#ff5a2b',
+    4: '#ff2f1f',
+    5: '#ffe9e0',
+  } as Record<number, string>,
+
   hudText: '#dfe8ff',
   hudDim: '#5a6798',
   hudAccent: '#3ad9ff',

@@ -13,6 +13,8 @@ export interface Obstacle {
   h: number;
   /** Infinity for terrain that can't be destroyed. */
   hp: number;
+  /** Armour this one spawned with, so plates can be drawn as hp/maxHp. */
+  maxHp: number;
   active: boolean;
   /** Counts down after being shot, for a white flash. */
   hitFlash: number;
@@ -45,6 +47,7 @@ export class ObstacleField {
         w: 0,
         h: 0,
         hp: Infinity,
+        maxHp: 1,
         active: false,
         hitFlash: 0,
         deathTimer: 0,
@@ -56,7 +59,7 @@ export class ObstacleField {
    * @param y Optional altitude override. Only sky drones use it — everything
    * else derives its height from the ground line.
    */
-  spawn(kind: ObstacleKind, x: number, y?: number): Obstacle | null {
+  spawn(kind: ObstacleKind, x: number, y?: number, armour?: number): Obstacle | null {
     const item = this.items.find((o) => !o.active);
     if (!item) return null;
 
@@ -84,7 +87,7 @@ export class ObstacleField {
         item.w = OBSTACLE.drone.width;
         item.h = OBSTACLE.drone.height;
         item.y = GROUND_Y - OBSTACLE.drone.bottomGap - item.h;
-        item.hp = OBSTACLE.drone.hp;
+        item.hp = armour ?? OBSTACLE.drone.hp;
         break;
       case 'skydrone':
         item.w = OBSTACLE.skydrone.width;
@@ -93,6 +96,7 @@ export class ObstacleField {
         item.hp = OBSTACLE.skydrone.hp;
         break;
     }
+    item.maxHp = Number.isFinite(item.hp) ? item.hp : 1;
     return item;
   }
 

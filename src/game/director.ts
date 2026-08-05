@@ -1,4 +1,4 @@
-import { OBSTACLE, PLAYER, jumpAirtimeAt, type Difficulty } from './config';
+import { OBSTACLE, PLAYER, PLAYER_X, SCREEN, jumpAirtimeAt, type Difficulty } from './config';
 import { SOLVED_BY, type ObstacleKind } from './obstacles';
 import { eligiblePatterns, type Pattern } from './patterns';
 import type { Rng } from '../core/rng';
@@ -34,11 +34,37 @@ export interface DirectorContext {
 }
 
 /**
+ * The heaviest armour that can actually be destroyed before contact.
+ *
+ * Armour and the shot-range cap pull against each other. A drone can only be
+ * hit once it's within range, it only stays within range for so long, and
+ * shots are paced by a cooldown — so at high scroll speed there is a hard
+ * ceiling on how many hits you can land, no matter how well you play.
+ *
+ * Rather than let the game occasionally spawn something unkillable, the
+ * director asks this first and never exceeds the answer. It's the same shape
+ * of promise as the spacing floor: the game may be hard, but it is never
+ * asking for the impossible.
+ *
+ * A side effect worth knowing: tough drones are an early- and mid-run feature.
+ * Late in a run everything is moving too fast to chew through 5 plates, so
+ * difficulty there comes from speed and density instead. HEAVY SHOT doubles
+ * this ceiling, which is a large part of why that powerup feels good.
+ */
+export function maxKillableArmour(scrollSpeed: number, damagePerShot = 1): number {
+  // Time from appearing at the right edge to reaching the player's front.
+  const approach = (SCREEN.w + 16 - (PLAYER_X + PLAYER.width)) / Math.max(scrollSpeed, 1);
+  const usable = approach * OBSTACLE.drone.killSafetyFactor;
+  const shots = Math.floor(usable / PLAYER.shotCooldown) + 1;
+  return Math.max(OBSTACLE.drone.hp, shots * damagePerShot);
+}
+
+/**
  * How long the player stays committed after dealing with each hazard type.
  * This is what makes the spacing guarantee real: the next obstacle cannot
  * arrive while the player is still locked into answering the last one.
  */
-function recoverySeconds(kind: ObstacleKind, scrollSpeed: number): number {
+function recoverySeconds(kind: ObstacleKind, scrollSpeed: number, armour: number): number {
   switch (kind) {
     case 'spike':
       // You're airborne for the whole jump and can't slide until you land.
@@ -48,16 +74,44 @@ function recoverySeconds(kind: ObstacleKind, scrollSpeed: number): number {
       // they're only truly committed for the minimum hold plus the cooldown.
       return PLAYER.slideMinHold + PLAYER.slideCooldown;
     case 'drone':
-      // Long enough to land every shot the drone takes to kill.
-      return OBSTACLE.drone.hp * PLAYER.shotCooldown;
     case 'skydrone':
-      return OBSTACLE.skydrone.hp * PLAYER.shotCooldown;
+      // Long enough to land every shot this particular drone takes to kill —
+      // which is why armour has to be threaded through the spacing maths
+      // rather than assumed to be the baseline.
+      return armour * PLAYER.shotCooldown;
   }
 }
 
-/** The shortest gap that's fair between one hazard and the next. */
-export function minimumGapSeconds(previous: ObstacleKind, scrollSpeed: number): number {
-  return REACTION_SECONDS + recoverySeconds(previous, scrollSpeed);
+/**
+ * The shortest gap that's fair between one hazard and the next.
+ * @param armour Hits the previous hazard took to kill, if it was shootable.
+ */
+export function minimumGapSeconds(
+  previous: ObstacleKind,
+  scrollSpeed: number,
+  armour: number = OBSTACLE.drone.hp,
+): number {
+  return REACTION_SECONDS + recoverySeconds(previous, scrollSpeed, armour);
+}
+
+/**
+ * Choose armour for a drone: unlocked by sector, weighted toward lighter, and
+ * hard-capped by what's actually killable at the current speed.
+ */
+export function pickDroneArmour(sector: number, scrollSpeed: number, rng: Rng): number {
+  const ceiling = maxKillableArmour(scrollSpeed);
+  const eligible = OBSTACLE.drone.tiers.filter(
+    (tier) => tier.minSector <= sector && tier.hp <= ceiling,
+  );
+  if (eligible.length === 0) return OBSTACLE.drone.hp;
+
+  const total = eligible.reduce((sum, tier) => sum + tier.weight, 0);
+  let roll = rng.next() * total;
+  for (const tier of eligible) {
+    roll -= tier.weight;
+    if (roll <= 0) return tier.hp;
+  }
+  return eligible[eligible.length - 1]!.hp;
 }
 
 interface ScheduledBeat {
@@ -71,6 +125,7 @@ export class Director {
   private pending: ScheduledBeat[] = [];
   private lastPatternId: string | null = null;
   private lastSpawnedKind: ObstacleKind | null = null;
+  private lastSpawnedArmour: number = OBSTACLE.drone.hp;
 
   /** Purely for debugging and the HUD; not used by the simulation. */
   currentPatternId: string | null = null;
@@ -80,6 +135,7 @@ export class Director {
     this.pending = [];
     this.lastPatternId = null;
     this.lastSpawnedKind = null;
+    this.lastSpawnedArmour = OBSTACLE.drone.hp;
     this.currentPatternId = null;
   }
 
@@ -88,7 +144,11 @@ export class Director {
    * Loops rather than spawning at most one per tick, so a very small gap at a
    * very high speed can't silently drift behind.
    */
-  update(dt: number, ctx: DirectorContext, spawn: (kind: ObstacleKind) => void): void {
+  update(
+    dt: number,
+    ctx: DirectorContext,
+    spawn: (kind: ObstacleKind, armour: number) => void,
+  ): void {
     this.timer -= dt;
     let guard = 0;
     while (this.timer <= 0 && guard++ < 8) {
@@ -96,11 +156,19 @@ export class Director {
 
       const beat = this.pending.shift();
       if (!beat) break;
-      spawn(beat.kind);
+
+      const armour =
+        beat.kind === 'drone' ? pickDroneArmour(ctx.sector, ctx.scrollSpeed, ctx.rng) : 1;
+      spawn(beat.kind, armour);
       this.lastSpawnedKind = beat.kind;
+      this.lastSpawnedArmour = armour;
 
       const next = this.pending[0];
-      this.timer += next ? next.delay : this.restBetweenPatterns(ctx);
+      // The gap after a drone depends on how much armour it actually had, so
+      // it's resolved here rather than baked into the schedule.
+      this.timer += next
+        ? Math.max(next.delay, minimumGapSeconds(beat.kind, ctx.scrollSpeed, armour))
+        : this.restBetweenPatterns(ctx);
     }
   }
 
@@ -161,7 +229,9 @@ export class Director {
     const rest = Math.max(MIN_PATTERN_REST, decayed) * ctx.difficulty.spacingScale;
     // Never shorter than what the last hazard demands.
     const lastKind = this.lastSpawnedKind;
-    return lastKind ? Math.max(rest, minimumGapSeconds(lastKind, ctx.scrollSpeed)) : rest;
+    return lastKind
+      ? Math.max(rest, minimumGapSeconds(lastKind, ctx.scrollSpeed, this.lastSpawnedArmour))
+      : rest;
   }
 }
 

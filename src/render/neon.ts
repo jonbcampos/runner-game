@@ -216,6 +216,7 @@ function drawBeam(ctx: CanvasRenderingContext2D, x: number, item: Obstacle, time
 
 /** Drone body up top, shield column beneath. Both parts die when the body does. */
 function drawDrone(ctx: CanvasRenderingContext2D, x: number, item: Obstacle, time: number): void {
+  const tint = PALETTE.droneTier[item.maxHp] ?? PALETTE.drone;
   const bodyH = OBSTACLE.drone.bodyHeight;
   const columnY = item.y + bodyH;
   const columnH = item.h - bodyH;
@@ -230,7 +231,7 @@ function drawDrone(ctx: CanvasRenderingContext2D, x: number, item: Obstacle, tim
   const pulse = 0.5 + Math.sin(time * 9) * 0.12;
   ctx.fillStyle = alpha(PALETTE.droneShield, pulse * 0.35);
   ctx.fillRect(x + 1, columnY, item.w - 2, columnH);
-  ctx.fillStyle = alpha(PALETTE.drone, pulse);
+  ctx.fillStyle = alpha(tint, pulse);
   ctx.fillRect(x + 4, columnY, item.w - 8, columnH);
 
   // Hard bright rails down each edge give the column a definite silhouette, so
@@ -246,13 +247,30 @@ function drawDrone(ctx: CanvasRenderingContext2D, x: number, item: Obstacle, tim
     ctx.fillRect(x + 4, columnY + offset, item.w - 8, 2);
   }
 
-  glowRect(ctx, x, item.y, item.w, bodyH, flashing ? PALETTE.playerCore : PALETTE.drone);
+  glowRect(ctx, x, item.y, item.w, bodyH, flashing ? PALETTE.playerCore : tint);
 
-  // Eye, and a damage pip per remaining hit point so "shoot it twice" is legible.
+  // Armour plates: one per remaining hit, stacked up the body.
+  //
+  // Colour alone would require learning a legend, and at speed nobody does. The
+  // plates make the shot count literally countable, and watching them break off
+  // one by one is also the clearest possible feedback that shots are landing.
   ctx.fillStyle = PALETTE.skyTop;
-  ctx.fillRect(x + 4, item.y + 8, item.w - 8, 6);
-  ctx.fillStyle = flashing ? PALETTE.playerCore : PALETTE.shot;
-  ctx.fillRect(x + 5, item.y + 9, Math.max(2, (item.w - 10) * (item.hp / OBSTACLE.drone.hp)), 4);
+  ctx.fillRect(x + 3, item.y + 4, item.w - 6, bodyH - 8);
+
+  const plates = item.maxHp;
+  const plateH = (bodyH - 10) / plates;
+  for (let i = 0; i < plates; i++) {
+    const remaining = i < item.hp;
+    // Stack from the bottom up, so the pile visibly shrinks as you shoot.
+    const py = item.y + bodyH - 5 - (i + 1) * plateH + 1;
+    if (remaining) {
+      ctx.fillStyle = flashing ? PALETTE.playerCore : tint;
+      ctx.fillRect(x + 5, py, item.w - 10, Math.max(1, plateH - 1));
+    } else {
+      ctx.fillStyle = alpha(tint, 0.18);
+      ctx.fillRect(x + 5, py, item.w - 10, Math.max(1, plateH - 1));
+    }
+  }
 }
 
 /** Small fast drone that only exists while you're flying. */
@@ -279,7 +297,9 @@ function drawPickups(ctx: CanvasRenderingContext2D, state: GameState, interpolat
     const x = item.prevX + (item.x - item.prevX) * interpolation;
     const y = item.y + Math.sin(item.phase * 3) * POWERUP.bobAmplitude;
     const size = POWERUP.size;
-    const colour = def.risky ? PALETTE.spike : PALETTE.shot;
+    // Repair is drawn in the same cyan as the hearts in the HUD, so what it
+    // does is obvious without ever being told.
+    const colour = def.risky ? PALETTE.spike : def.instant ? PALETTE.player : PALETTE.shot;
     const pulse = 0.6 + Math.sin(item.phase * 6) * 0.25;
 
     ctx.fillStyle = alpha(colour, 0.16 * pulse);
@@ -313,6 +333,7 @@ const POWERUP_GLYPH: Record<string, string> = {
   invincible: 'I',
   power: 'P',
   longShot: 'L',
+  repair: '+',
 };
 
 function drawDeath(ctx: CanvasRenderingContext2D, item: Obstacle, x: number): void {

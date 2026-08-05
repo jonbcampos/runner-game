@@ -18,7 +18,14 @@ import { inset, overlaps, type Aabb } from './collision';
 import { Director } from './director';
 import { ObstacleField } from './obstacles';
 import { Player } from './player';
-import { PickupField, POWERUP_DEFS, pickPowerup, pickupY, type PowerupKind } from './powerups';
+import {
+  PickupField,
+  POWERUP_DEFS,
+  isInstant,
+  pickPowerup,
+  pickupY,
+  type PowerupKind,
+} from './powerups';
 import { ShotPool } from './projectiles';
 import { Rng } from '../core/rng';
 import type { Input } from '../core/input';
@@ -40,7 +47,8 @@ export type GameEventType =
   | 'boss-hurt'
   | 'boss-die'
   | 'powerup'
-  | 'powerup-expire';
+  | 'powerup-expire'
+  | 'repair';
 
 export interface GameEvent {
   type: GameEventType;
@@ -108,6 +116,9 @@ export class GameState {
   powerupRemaining = 0;
   /** Counts down after collecting, driving the on-screen blurb. */
   powerupFlash = 0;
+  /** Which pickup the blurb is describing — not always the active one, since
+   * instant pickups (REPAIR) flash a message without occupying the slot. */
+  powerupFlashKind: PowerupKind | null = null;
 
   private pickupTimer = 0;
   private skyDroneTimer = 0;
@@ -191,6 +202,7 @@ export class GameState {
     this.activePowerup = null;
     this.powerupRemaining = 0;
     this.powerupFlash = 0;
+    this.powerupFlashKind = null;
     this.pickupTimer = POWERUP.spawnIntervalMin;
     this.skyDroneTimer = 0;
 
@@ -338,10 +350,41 @@ export class GameState {
       if (!overlaps(this.boxA, this.boxB)) continue;
 
       item.active = false;
+      this.powerupFlash = 1.6;
+      this.powerupFlashKind = item.kind;
+
+      if (isInstant(item.kind)) {
+        // Applied and gone. Deliberately does NOT touch the timed slot, so
+        // grabbing a heart never costs you the powerup you're already running.
+        this.applyRepair();
+        this.emit('repair', this.boxB.x, this.boxB.y);
+        continue;
+      }
+
       this.activePowerup = item.kind;
       this.powerupRemaining = POWERUP_DEFS[item.kind].duration;
-      this.powerupFlash = 1.6;
       this.emit('powerup', this.boxB.x, this.boxB.y);
+    }
+  }
+
+  /**
+   * Heal a heart, or add one to the maximum if already full.
+   *
+   * Never a wasted pickup, which matters because a heal you can't use is a
+   * dead moment. On HARD it's the only route to a second chance at all — and
+   * the cap is what stops a lucky run turning that mode into one where
+   * mistakes don't matter, which is the whole point of it.
+   */
+  private applyRepair(): void {
+    const ceiling = this.difficulty.hp + POWERUP.repairMaxBonus;
+    if (this.player.hp < this.player.maxHp) {
+      this.player.hp += 1;
+    } else if (this.player.maxHp < ceiling) {
+      this.player.maxHp += 1;
+      this.player.hp += 1;
+    } else {
+      // Already capped: pay out in score rather than doing nothing at all.
+      this.score += 40 * PX_PER_METRE;
     }
   }
 
@@ -380,7 +423,7 @@ export class GameState {
         scrollSpeed: this.scrollSpeed,
         rng: this.rng,
       },
-      (kind) => this.obstacles.spawn(kind, ObstacleField.spawnX),
+      (kind, armour) => this.obstacles.spawn(kind, ObstacleField.spawnX, undefined, armour),
     );
   }
 

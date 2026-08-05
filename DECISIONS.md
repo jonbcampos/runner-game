@@ -416,3 +416,59 @@ keeps roughly the timing you already have and lets the extra height do the work.
 Caught by the test asserting HIGH JUMP clears a beam (76px top) while a normal jump (66px apex)
 cannot. The first version passed the "is it taller" check and still failed the real one, which is
 exactly why the tests assert observable outcomes rather than that a field got set.
+
+---
+
+## 28. Drones have armour tiers, and the game guarantees they're killable
+
+**Decided:** Drones come in 2/3/4/5-hit tiers, colour-coded on an orange→red→white heat ramp *and*
+drawn with one armour plate per remaining hit. Tougher tiers unlock by sector.
+
+**Why the plates and not just colour:** colour alone means learning a legend, and nobody does that at
+speed. Plates make the shot count literally countable, and watching them break off one at a time is
+also the clearest possible feedback that your shots are connecting. Colour then just makes the tier
+recognisable before you've had time to count.
+
+The ramp deliberately stays inside orange/red/white. The first version used a magenta for tier 4
+that sat right next to the spike pink — and confusing a drone for a spike means answering with the
+wrong verb entirely, which is the worst mistake this game can induce.
+
+**The non-obvious part:** armour and the shot-range cap (decision 23) pull against each other. A
+drone can only be hit once it's close, it only stays close for so long, and shots are paced by a
+cooldown — so above a certain scroll speed a 5-plate drone **cannot be destroyed by any input at
+all.** Worse, that failure looks exactly like the player being bad at the game.
+
+So `maxKillableArmour(scrollSpeed)` computes the ceiling from the approach time, and the director
+never exceeds it. Same shape of promise as the spacing floor: the game may be hard, but it never
+asks for the impossible. In practice the ceiling only binds at the very top speeds, so it's a safety
+net rather than a constant restriction.
+
+**Consequence worth knowing:** heavy drones are an early- and mid-run feature. Late in a run
+everything moves too fast to chew through five plates, so difficulty there comes from speed and
+density instead. HEAVY SHOT doubles the ceiling, which is a large part of why that powerup feels
+good.
+
+**Verified**, not assumed: 83 tier/speed combinations across all three difficulties, each one
+actually simulated to confirm a player holding fire destroys the drone before contact.
+
+---
+
+## 29. REPAIR is instant, and never occupies the powerup slot
+
+**Decided:** A seventh pickup, `+1 HP`, applied the moment you touch it. It restores a heart, or
+raises your maximum if you're already full, capped at the difficulty's starting HP + 2.
+
+**Why it's structurally different:** every other powerup is timed, but a heal has nothing to count
+down. More importantly, if it consumed the single slot (decision 25) then grabbing a heart would
+throw away an active FLIGHT — a bizarre trade that would make players avoid health.
+
+**Why it extends the maximum when you're already full:** otherwise it's dead weight whenever you're
+healthy, and on HARD it would do nothing *at all* — that mode starts at one hit point, so there's no
+such state as "hurt but alive". Extending the max makes it the only route to a second chance on
+Hard, which is exactly where a heal should matter most.
+
+**Why the cap exists:** without it a lucky run of pickups turns Hard into a mode where mistakes stop
+costing anything, and the one-hit tension is the entire point of that difficulty.
+
+It's drawn in the same cyan as the HUD hearts, so what it does is obvious without a legend — the
+same reasoning as the armour plates in decision 28.

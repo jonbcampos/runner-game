@@ -1,13 +1,15 @@
 import {
   DIFFICULTIES,
   FIXED_DT,
+  OBSTACLE,
   PLAYER,
+  POWERUP,
   PLAYER_X,
   SHOT,
   WORLD,
   type DifficultyId,
 } from '../game/config';
-import { Director, minimumGapSeconds } from '../game/director';
+import { Director, maxKillableArmour, minimumGapSeconds } from '../game/director';
 import { ObstacleField, SOLVED_BY, type ObstacleKind } from '../game/obstacles';
 import { Rng } from '../core/rng';
 import { slideDurationAt } from '../game/player';
@@ -397,7 +399,112 @@ function trialPowerups(): { kind: PowerupKind; effect: string; ok: boolean }[] {
   out.push({ kind: 'flight', effect: `climbed ${Math.round(startY - fly.player.feetY)}px, sky drones: ${sawSkyDrone}`,
     ok: climbed && sawSkyDrone });
 
+  // REPAIR is instant, so it's checked by its three distinct behaviours rather
+  // than through the timed-effect harness above.
+  const repair = trialRepair();
+  out.push({ kind: 'repair', effect: repair.detail, ok: repair.ok });
+
   return out;
+}
+
+/**
+ * REPAIR must heal when hurt, extend the maximum when full, and stop at the cap.
+ *
+ * The middle case is the one that matters: without it the pickup is dead weight
+ * whenever you're healthy, and on HARD — which starts at one hit point and so
+ * can never be "hurt but alive" — it would do nothing at all.
+ */
+function trialRepair(): { ok: boolean; detail: string } {
+  const heal = new GameState();
+  heal.start('normal', 1, false);
+  heal.player.hp = 1;
+  collectRepair(heal);
+  const healed = heal.player.hp === 2 && heal.player.maxHp === 2;
+
+  const extend = new GameState();
+  extend.start('hard', 1, false);
+  const startMax = extend.player.maxHp;
+  collectRepair(extend);
+  const extended = extend.player.maxHp === startMax + 1 && extend.player.hp === startMax + 1;
+
+  const capped = new GameState();
+  capped.start('hard', 1, false);
+  for (let i = 0; i < 6; i++) collectRepair(capped);
+  const ceiling = DIFFICULTIES.hard.hp + POWERUP.repairMaxBonus;
+  const respectsCap = capped.player.maxHp === ceiling;
+
+  return {
+    ok: healed && extended && respectsCap,
+    detail: `heal=${healed} extendWhenFull=${extended} cap=${capped.player.maxHp}/${ceiling}`,
+  };
+}
+
+/** Drop a repair pickup onto the player and tick once so it's collected. */
+function collectRepair(state: GameState): void {
+  const box = { x: 0, y: 0, w: 0, h: 0 };
+  state.player.bounds(box);
+  state.pickups.spawn('repair', box.x, box.y);
+  state.update(FIXED_DT, new FakeInput() as never);
+}
+
+/**
+ * Every drone the director can emit must be killable before it reaches you.
+ *
+ * Armour and the shot-range cap pull in opposite directions: heavier armour
+ * needs more time, and a faster world gives less of it. Above some speed a
+ * 5-plate drone cannot be destroyed by any input at all — and the failure looks
+ * exactly like the player being bad, which is the worst kind of unfairness
+ * because it's invisible.
+ *
+ * So this walks the whole speed range each difficulty actually reaches, asks
+ * the director what it would spawn, and verifies that a player holding fire
+ * from the moment it appears actually destroys it.
+ */
+function trialDroneArmour(difficultyId: DifficultyId): {
+  checked: number;
+  worstArmour: number;
+  failures: string[];
+} {
+  const difficulty = DIFFICULTIES[difficultyId];
+  const failures: string[] = [];
+  let checked = 0;
+  let worstArmour = 0;
+
+  const baseSpeed = WORLD.baseScrollSpeed * difficulty.speedScale;
+  const topSpeed = WORLD.speedCap * difficulty.speedScale;
+
+  for (let step = 0; step <= 6; step++) {
+    const scrollSpeed = baseSpeed + ((topSpeed - baseSpeed) * step) / 6;
+    const ceiling = maxKillableArmour(scrollSpeed);
+
+    for (const tier of OBSTACLE.drone.tiers) {
+      if (tier.hp > ceiling) continue; // The director would never emit this.
+      checked++;
+      worstArmour = Math.max(worstArmour, tier.hp);
+
+      const state = new GameState();
+      const input = new FakeInput();
+      state.start(difficultyId, 1, false);
+      // Pin the speed: this is about the interaction, not about escalation.
+      state.scrollSpeed = scrollSpeed;
+      const drone = state.obstacles.spawn('drone', ObstacleField.spawnX, undefined, tier.hp);
+      if (!drone) continue;
+
+      input.press('shoot');
+      let killed = false;
+      for (let i = 0; i < Math.ceil(8 / FIXED_DT); i++) {
+        state.scrollSpeed = scrollSpeed;
+        state.player.hp = 99;
+        state.update(FIXED_DT, input as never);
+        if (!drone.active || drone.hp <= 0) { killed = true; break; }
+        if (drone.x + drone.w < PLAYER_X) break; // Reached us still alive.
+      }
+      if (!killed) {
+        failures.push(`${tier.hp}-plate at ${Math.round(scrollSpeed)}px/s`);
+      }
+    }
+  }
+  return { checked, worstArmour, failures };
 }
 
 export function verify(): TrialResult[] {
@@ -483,6 +590,18 @@ export function verify(): TrialResult[] {
       row.ok
         ? `[verify] powerup ${row.kind}: ${row.effect}`
         : `[verify] powerup ${row.kind} HAS NO EFFECT — ${row.effect}`,
+    );
+  }
+
+  for (const difficultyId of ['kid', 'normal', 'hard'] as DifficultyId[]) {
+    const armour = trialDroneArmour(difficultyId);
+    const ok = armour.failures.length === 0;
+    results.push({ difficulty: difficultyId, kind: 'drone', verb: 'shoot',
+      survived: ok, expected: true, pass: ok });
+    console.log(
+      ok
+        ? `[verify] drone armour ok on ${difficultyId} (${armour.checked} tier/speed combos, up to ${armour.worstArmour} plates)`
+        : `[verify] UNKILLABLE drones on ${difficultyId}: ${armour.failures.join(', ')}`,
     );
   }
 

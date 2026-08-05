@@ -133,6 +133,10 @@ function presentEvent(event: GameEvent): void {
       audio.play('sector');
       particles.droneDeath(event.x, event.y, random);
       break;
+    case 'repair':
+      audio.play('sector');
+      particles.shotImpact(event.x, event.y, random);
+      break;
     case 'powerup-expire':
       audio.play('select');
       break;

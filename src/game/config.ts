@@ -282,7 +282,38 @@ export const OBSTACLE = {
     bottomGap: 6,
     /** Height of the solid drone body at the top; the rest renders as shield. */
     bodyHeight: 26,
+    /** Baseline armour. Individual drones use a tier from the table below. */
     hp: 2,
+
+    /**
+     * Armour tiers, 2 to 5 shots.
+     *
+     * The point is to make "shoot it" a *read* rather than a reflex: a 5-plate
+     * drone has to be engaged the moment it appears, a 2-plate one can wait.
+     * Tougher tiers unlock by sector so the vocabulary grows instead of
+     * arriving all at once.
+     *
+     * Each tier is drawn in its own colour AND with one armour plate per hit,
+     * so the count is countable rather than memorised. Colour alone would mean
+     * learning a legend; plates you can just look at.
+     */
+    tiers: [
+      { hp: 2, weight: 10, minSector: 1 },
+      { hp: 3, weight: 8, minSector: 2 },
+      { hp: 4, weight: 5, minSector: 3 },
+      { hp: 5, weight: 3, minSector: 4 },
+    ],
+
+    /**
+     * Fraction of a drone's approach the player is assumed to actually spend
+     * shooting. The rest is reaction time and imprecision.
+     *
+     * This exists because armour and the shot-range cap fight each other: a
+     * drone can only be hit once it's close, and it only stays close for so
+     * long. Above a certain scroll speed a 5-plate drone cannot be destroyed
+     * before contact by *any* input — see maxKillableArmour().
+     */
+    killSafetyFactor: 0.72,
   },
 
   /**
@@ -386,6 +417,14 @@ export const POWERUP = {
 
   /** LONG SHOT: reach, which matters a lot now that range is capped. */
   rangeScale: 2.3,
+
+  /**
+   * REPAIR: how far above the difficulty's starting HP you can stack hearts.
+   *
+   * Capped so a lucky run of pickups can't turn HARD into a game where mistakes
+   * stop mattering — the 1-HP tension is the whole point of that mode.
+   */
+  repairMaxBonus: 2,
 
   // --- Flight ---
   /** Upward speed while JUMP is held, and the sink rate when it isn't. */

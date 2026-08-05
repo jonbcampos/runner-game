@@ -21,7 +21,8 @@ export type PowerupKind =
   | 'flight'
   | 'invincible'
   | 'power'
-  | 'longShot';
+  | 'longShot'
+  | 'repair';
 
 export interface PowerupDef {
   kind: PowerupKind;
@@ -31,6 +32,12 @@ export interface PowerupDef {
   duration: number;
   /** True for pickups that are a risk rather than a reward. */
   risky: boolean;
+  /**
+   * Applied the moment it's collected and then gone, rather than occupying the
+   * timed slot. A heal has nothing to count down, and making it consume the
+   * slot would mean throwing away an active flight to pick up a heart.
+   */
+  instant?: boolean;
   /** Relative spawn weight. */
   weight: number;
 }
@@ -97,6 +104,20 @@ export const POWERUP_DEFS: Record<PowerupKind, PowerupDef> = {
     duration: 10,
     risky: false,
     weight: 9,
+  },
+  /**
+   * The only instant pickup. Restores a heart, or raises your maximum if you're
+   * already full — so it's never a wasted grab, and on HARD (which starts at a
+   * single hit point) it's the only way to ever get a second chance.
+   */
+  repair: {
+    kind: 'repair',
+    label: 'REPAIR',
+    blurb: '+1 HP',
+    duration: 0,
+    risky: false,
+    instant: true,
+    weight: 7,
   },
 };
 
@@ -188,4 +209,9 @@ export function pickupY(kind: PowerupKind, random: () => number): number {
   // a real input rather than being the default.
   if (POWERUP_DEFS[kind].risky) return GROUND_Y - 22;
   return base;
+}
+
+/** Instant pickups apply and vanish; they never occupy the timed slot. */
+export function isInstant(kind: PowerupKind): boolean {
+  return POWERUP_DEFS[kind].instant === true;
 }

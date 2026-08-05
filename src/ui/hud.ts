@@ -45,8 +45,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
  * good one.
  */
 function drawPowerupTimer(ctx: CanvasRenderingContext2D, state: GameState): void {
-  if (state.powerupFlash > 0) {
-    const def = POWERUP_DEFS[state.activePowerup ?? 'speed'];
+  if (state.powerupFlash > 0 && state.powerupFlashKind) {
+    const def = POWERUP_DEFS[state.powerupFlashKind];
     const fade = Math.min(1, state.powerupFlash / 0.4);
     ctx.save();
     ctx.globalAlpha = fade;
