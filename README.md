@@ -13,6 +13,11 @@ Every hazard has exactly one correct answer:
 | Overhead hazard (floating castle / beam) | **SLIDE** |
 | Armoured hazard (rain cloud / drone) | **SHOOT** — 2 to 5 times, count the plates |
 
+The difficulty ladder is **verbs first, speed second**: EASY is a two-button game (jump and fire,
+no overhead hazards at all), NORMAL adds the third verb at almost the same pace, and HARD keeps
+that vocabulary and turns the speed up. Introducing a new thing to think about and a speed jump
+together makes it impossible to tell which one beat you.
+
 ## Running it
 
 ```bash
@@ -62,7 +67,7 @@ __game.verify()   // in the browser console, dev builds only
 ```
 
 This simulates all three hazards against all four responses (each verb, plus doing nothing) on all
-three difficulties, and asserts a fatal hit actually reaches the game-over screen — 37 checks. It
+three difficulties, and asserts a fatal hit actually reaches the game-over screen. It
 runs the real `GameState` against a fake input, so it catches breakage anywhere in the chain, not
 just bad arithmetic in the config.
 
@@ -74,4 +79,4 @@ dimensions stop enforcing its verb (a drone you could jump over, a beam you coul
 Playable and deployed: https://jonbcampos.github.io/runner-game/
 
 Core loop, authored pattern director, boss fights, seven powerups, drone armour tiers, two themes,
-installable PWA with offline play. 66 automated design-contract checks.
+installable PWA with offline play. 70 automated design-contract checks.

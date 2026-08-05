@@ -29,13 +29,17 @@ export type BossPhase =
   | 'dying'
   | 'done';
 
-/** The hazards a boss throws. Order is shuffled per run, so every verb is used
- * but never in a sequence you can memorise. */
-const ATTACK_KINDS: readonly ObstacleKind[] = ['spike', 'beam', 'drone'];
-
 export interface BossContext {
   scrollSpeed: number;
   rng: Rng;
+  /**
+   * The hazard families this difficulty teaches. The boss draws its attacks
+   * from exactly this set — on EASY it never throws a beam, because EASY has
+   * no slide button to answer one with. A boss that could reach outside the
+   * difficulty's vocabulary would be an unanswerable hazard arriving at the
+   * hardest moment in the run.
+   */
+  allowedKinds: readonly ObstacleKind[];
 }
 
 export class Boss {
@@ -63,7 +67,7 @@ export class Boss {
   private attackTimer = 0;
   private lastAttackKind: ObstacleKind | null = null;
   /** Shuffled each run so the hazard order isn't a fixed cycle. */
-  private attackOrder: ObstacleKind[] = [...ATTACK_KINDS];
+  private attackOrder: ObstacleKind[] = [];
   private attackIndex = 0;
   /** Where this particular approach is heading. Re-rolled every cycle. */
   private approachX = 250;
@@ -130,7 +134,7 @@ export class Boss {
    * Advance the fight. `launch` is called for each hazard the boss throws;
    * the caller decides where hazards actually go into the world.
    */
-  update(dt: number, ctx: BossContext, launch: (kind: ObstacleKind, x: number) => void): void {
+  update(dt: number, ctx: BossContext, launch: (kind: ObstacleKind) => void): void {
     if (!this.active) return;
     this.prevX = this.x;
     this.prevY = this.y;
@@ -152,7 +156,7 @@ export class Boss {
           const kind = this.attackOrder[this.attackIndex % this.attackOrder.length]!;
           this.attackIndex++;
           this.attacksLeft--;
-          launch(kind, this.x);
+          launch(kind);
 
           // Even a boss can't break the spacing guarantee: the gap to the next
           // hazard is never shorter than the verbs involved actually allow.
@@ -243,7 +247,9 @@ export class Boss {
     this.phase = 'attacking';
     this.x = this.farX;
     this.attacksLeft = ctx.rng.int(BOSS.attacksPerRunMin, BOSS.attacksPerRunMax);
-    // Shuffle the hazard order so the fight can't be answered from memory.
+    // Rebuilt each run from the difficulty's vocabulary, then shuffled so the
+    // fight can't be answered from memory.
+    this.attackOrder = ctx.allowedKinds.filter((kind) => kind !== 'skydrone');
     for (let i = this.attackOrder.length - 1; i > 0; i--) {
       const j = ctx.rng.int(0, i);
       const tmp = this.attackOrder[i]!;

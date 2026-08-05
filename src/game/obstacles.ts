@@ -1,4 +1,4 @@
-import { GROUND_Y, OBSTACLE, SCREEN } from './config';
+import { GROUND_Y, OBSTACLE, spawnX } from './config';
 import type { Aabb } from './collision';
 
 /** One family per verb. See OBSTACLE in config.ts for why the sizes are what they are. */
@@ -149,6 +149,6 @@ export class ObstacleField {
 
   /** X coordinate just off the right edge — where new obstacles enter. */
   static get spawnX(): number {
-    return SCREEN.w + 16;
+    return spawnX();
   }
 }

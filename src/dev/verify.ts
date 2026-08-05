@@ -6,6 +6,7 @@ import {
   POWERUP,
   PLAYER_X,
   SHOT,
+  SCREEN,
   WORLD,
   type DifficultyId,
 } from '../game/config';
@@ -737,6 +738,100 @@ function trialBossOpeningsReachable(): { ok: boolean; detail: string } {
   };
 }
 
+/**
+ * A difficulty must never be handed a hazard it doesn't teach.
+ *
+ * EASY has no slide button, so a beam arriving in EASY is not "hard" — it is
+ * unanswerable, and it would be unanswerable at the exact moment the player
+ * feels they're doing well. Two independent sources can emit hazards (the
+ * director and the boss) and both had to be taught the difficulty's
+ * vocabulary, which is precisely the shape of change where one gets updated
+ * and the other doesn't. So this drives a full run, boss fights included, and
+ * counts anything outside the allowed set.
+ */
+function trialHazardVocabulary(difficultyId: DifficultyId): {
+  ok: boolean;
+  detail: string;
+} {
+  const difficulty = DIFFICULTIES[difficultyId];
+  const state = new GameState();
+  state.start(difficultyId, 4242);
+
+  // Never presses anything: what's being checked is what the game emits.
+  const idle = new FakeInput();
+
+  const seen = new Set<ObstacleKind>();
+  let illegal = 0;
+  let bossFights = 0;
+  let wasFighting = false;
+
+  // Long enough to clear the first boss and a couple of sectors past it.
+  for (let step = 0; step < Math.ceil(220 / FIXED_DT); step++) {
+    // Immortal: the point is what the game *emits*, not whether an idle player
+    // survives it. A dead player stops the world and hides later hazards.
+    state.player.hp = 99;
+    state.update(FIXED_DT, idle as never);
+
+    const fighting = state.boss.blocking;
+    if (fighting && !wasFighting) bossFights++;
+    wasFighting = fighting;
+
+    for (const obstacle of state.obstacles.items) {
+      if (!obstacle.active) continue;
+      seen.add(obstacle.kind);
+      if (!difficulty.allowedKinds.includes(obstacle.kind)) illegal++;
+    }
+  }
+
+  const ok = illegal === 0 && bossFights > 0;
+  return {
+    ok,
+    detail:
+      `${difficultyId}: saw [${[...seen].join(', ')}], ` +
+      `allowed [${difficulty.allowedKinds.join(', ')}], ` +
+      `${illegal} illegal, ${bossFights} boss fight(s)`,
+  };
+}
+
+/**
+ * Hazards must enter from outside the frame, not appear inside it.
+ *
+ * Two separate ways this broke: the frame used to letterbox on a modern phone,
+ * so the visible edge sat ~20 virtual px inside the frame edge; and the boss
+ * launched its hazards from its own position, 74px in. Both look identical to
+ * the player — things blinking into existence — and neither shows up on a
+ * desktop browser window, which is the wrong aspect ratio to reproduce it.
+ */
+function trialSpawnOffScreen(): { ok: boolean; detail: string } {
+  const state = new GameState();
+  state.start('normal', 99);
+
+  const idle = new FakeInput();
+
+  let earliest = Infinity;
+  const seen = new Set<number>();
+
+  for (let step = 0; step < Math.ceil(220 / FIXED_DT); step++) {
+    state.player.hp = 99;
+    state.update(FIXED_DT, idle as never);
+    state.obstacles.items.forEach((obstacle, index) => {
+      if (!obstacle.active) {
+        seen.delete(index);
+        return;
+      }
+      if (seen.has(index)) return;
+      seen.add(index);
+      earliest = Math.min(earliest, obstacle.x);
+    });
+  }
+
+  const ok = earliest >= SCREEN.w;
+  return {
+    ok,
+    detail: `first-seen x >= ${earliest.toFixed(0)}, frame is ${SCREEN.w} wide`,
+  };
+}
+
 export function verify(): TrialResult[] {
   const kinds: ObstacleKind[] = ['spike', 'beam', 'drone'];
   const verbs: (Action | 'nothing')[] = ['jump', 'slide', 'shoot', 'nothing'];
@@ -895,6 +990,26 @@ export function verify(): TrialResult[] {
     });
     if (!ok) console.error(`[verify] hold-to-slide BROKEN: ${name}`);
   }
+
+  for (const difficultyId of ['kid', 'normal', 'hard'] as DifficultyId[]) {
+    const vocabulary = trialHazardVocabulary(difficultyId);
+    results.push({ difficulty: difficultyId, kind: 'beam', verb: 'slide',
+      survived: vocabulary.ok, expected: true, pass: vocabulary.ok });
+    console.log(
+      vocabulary.ok
+        ? `[verify] hazard vocabulary respected — ${vocabulary.detail}`
+        : `[verify] UNANSWERABLE HAZARD spawned — ${vocabulary.detail}`,
+    );
+  }
+
+  const offScreen = trialSpawnOffScreen();
+  results.push({ difficulty: 'normal', kind: 'spike', verb: 'jump',
+    survived: offScreen.ok, expected: true, pass: offScreen.ok });
+  console.log(
+    offScreen.ok
+      ? `[verify] hazards enter from off-frame — ${offScreen.detail}`
+      : `[verify] hazards POP IN inside the frame — ${offScreen.detail}`,
+  );
 
   const failures = results.filter((r) => !r.pass);
   console.table(

@@ -420,9 +420,21 @@ export class GameState {
     if (!this.boss.active) return;
     const wasAlive = this.boss.phase !== 'dying' && this.boss.phase !== 'done';
 
-    this.boss.update(dt, { scrollSpeed: this.scrollSpeed, rng: this.rng }, (kind, x) => {
-      this.obstacles.spawn(kind, x);
-    });
+    this.boss.update(
+      dt,
+      {
+        scrollSpeed: this.scrollSpeed,
+        rng: this.rng,
+        allowedKinds: this.difficulty.allowedKinds,
+      },
+      // Boss hazards enter from the same place every other hazard does, rather
+      // than from the boss's own position. It used to throw them from where it
+      // hovers — 74px inside the frame — which looked like the boss conjuring
+      // them, and cost the player a third of a second of warning at exactly
+      // the moment the run is hardest. They now slide in from off-screen
+      // behind it, which reads the same and is honest about reaction time.
+      (kind) => this.obstacles.spawn(kind, ObstacleField.spawnX),
+    );
 
     if (wasAlive && this.boss.phase === 'dying') {
       this.bossVictoryFlash = 2.2;

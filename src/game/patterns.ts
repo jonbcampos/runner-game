@@ -83,7 +83,25 @@ export function verbCount(pattern: Pattern): number {
   return verbs.size;
 }
 
-/** Patterns legal for a difficulty's verb ceiling and the current sector. */
-export function eligiblePatterns(maxVerbs: number, sector: number): Pattern[] {
-  return PATTERNS.filter((pattern) => verbCount(pattern) <= maxVerbs && pattern.minSector <= sector);
+/**
+ * Patterns legal for a difficulty's verb ceiling, hazard vocabulary, and the
+ * current sector.
+ *
+ * `allowedKinds` is the filter that makes EASY a two-button game: no pattern
+ * containing a beam survives it, so the slide button has nothing to answer and
+ * can be taken off the screen. Filtering the library rather than special-casing
+ * the spawner means a pattern added later is automatically excluded from EASY
+ * if it uses a hazard EASY doesn't teach — the author can't forget.
+ */
+export function eligiblePatterns(
+  maxVerbs: number,
+  sector: number,
+  allowedKinds: readonly ObstacleKind[],
+): Pattern[] {
+  return PATTERNS.filter(
+    (pattern) =>
+      verbCount(pattern) <= maxVerbs &&
+      pattern.minSector <= sector &&
+      pattern.beats.every((beat) => allowedKinds.includes(beat.kind)),
+  );
 }

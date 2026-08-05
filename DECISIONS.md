@@ -653,3 +653,65 @@ the space the player must pass through is a lie about the rules.
 **Colour discipline:** purple is the unicorn's, so the castle roof is blue rather than the purple it
 naturally wanted to be. With three hazard families and one shared palette, every hue has to belong
 to exactly one answer.
+
+---
+
+## 38. Hazards must enter from outside the screen, not inside it
+
+**Decided:** MAX_VIRTUAL_W goes from 560 to 640, and the boss launches its hazards from the normal
+off-screen spawn point instead of from its own body.
+
+**Why:** Jonathan reported obstacles "popping in about 50px" rather than sliding in from the edge.
+Two independent causes, both invisible on a desktop browser window:
+
+1. **The frame letterboxed.** 560×270 is 2.07:1, narrower than any modern phone. On a 412×915
+   handset the frame got a ~30 CSS-px black bar at each end, so hazards entered at the bar's edge
+   — well inside the visible display. 640 is 2.37:1, which covers everything up to 21:9. Measured
+   after the change on the same device: bars went from 30px to 0.
+2. **The boss threw them.** Boss hazards spawned at the boss's own x, 74px inside the frame. It
+   looked like conjuring, and it quietly cost a third of a second of warning at the hardest moment
+   in the run.
+
+**The cost, stated honestly:** a wider frame shows hazards fractionally sooner, which is a small
+advantage. It's partly self-correcting — `maxKillableArmour()` derives from `SCREEN.w`, so a wider
+screen also permits heavier drones — and popping is the worse problem, because it looks like the
+game is broken rather than merely generous.
+
+**Now machine-checked:** `trialSpawnOffScreen()` drives a full run including a boss fight and
+asserts every obstacle's first-seen x is at or beyond the frame's right edge. The literal `16`
+that three call sites each carried is now `SPAWN_MARGIN`/`spawnX()` in config, because the
+director's reaction-time maths has to agree with where hazards actually appear — if those drift,
+the spacing guarantee is computed against a distance the game isn't using.
+
+---
+
+## 39. The difficulty ladder is verbs first, speed second
+
+**Decided:** EASY spawns no overhead hazards at all and has no slide button — it's a two-button
+game. NORMAL adds the third verb but is only a shade faster (speedScale 1.0 → 0.85). HARD keeps
+NORMAL's vocabulary and is the one that's genuinely fast.
+
+**Why:** Ellie played and it was too much. The diagnosis that mattered: slide wasn't hard to
+*perform*, it was a third thing to *consider* in the half-second she had. The cost was in the
+reading, not the doing — so lowering the speed wouldn't have fixed it, and hiding the button
+alone would have been worse than useless.
+
+**Remove the hazard, not just the control.** A button you can't press for a hazard that still
+arrives is a death you cannot avoid. So `Difficulty.allowedKinds` is the single source: the
+pattern library filters against it, the boss draws its attack vocabulary from it, and the touchpad
+derives its buttons from it via `SOLVED_BY`. One list, three consumers, no way for them to
+disagree.
+
+**Why the speeds moved too:** if NORMAL both added a verb and jumped the speed, a player who
+failed there couldn't tell which change beat them. Each rung should introduce one thing. EASY 0.75
+→ NORMAL 0.85 is the verb step; NORMAL 0.85 → HARD 1.2 is the speed step.
+
+**The failure mode this could have shipped with:** two independent things emit hazards — the
+director and the boss — and teaching only one of them the difficulty's vocabulary would mean EASY
+plays correctly for two minutes and then throws an unanswerable castle at the boss fight, which is
+the worst possible moment to discover it. `trialHazardVocabulary()` therefore drives a full run
+per difficulty *including* boss fights and counts anything outside the allowed set. It also
+asserts a boss fight actually happened, so the test can't pass by never reaching the risky part.
+
+The difficulty buttons now show their verbs ("3 HP · JUMP FIRE"), because which mode is simpler is
+otherwise invisible until you've already started playing.

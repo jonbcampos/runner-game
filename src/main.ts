@@ -3,6 +3,7 @@ import { Input } from './core/input';
 import { startLoop } from './core/loop';
 import { Viewport } from './core/viewport';
 import { PLAYER_X, type DifficultyId } from './game/config';
+import { SOLVED_BY } from './game/obstacles';
 import { GameState, validateDesignContracts, type GameEvent } from './game/state';
 import { neonTheme } from './render/neon';
 import { sceneRenderer } from './render/scene';
@@ -17,6 +18,7 @@ import {
   themeButton,
   titleMenu,
 } from './ui/screens';
+import { setTouchpadActions } from './ui/touchpad';
 
 const BEST_KEY = 'ellies-rainbow-run.best';
 const DIFFICULTY_KEY = 'ellies-rainbow-run.difficulty';
@@ -99,6 +101,9 @@ function startRun(difficulty: DifficultyId): void {
   previousBest = state.best;
   // A fresh seed per run. Deterministic within a run (see Rng), random between.
   state.start(difficulty, (Math.random() * 0xffffffff) >>> 0);
+  // The controls follow the difficulty's hazard vocabulary: no beams, no slide
+  // button. Derived from allowedKinds so the two can never disagree.
+  setTouchpadActions(['shoot', ...state.difficulty.allowedKinds.map((k) => SOLVED_BY[k])]);
   particles.reset();
   // Drop anything buffered by the tap that started the run, so the first frame
   // of gameplay doesn't open with a phantom jump.

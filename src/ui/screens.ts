@@ -1,4 +1,5 @@
 import { DIFFICULTIES, VIRTUAL_H, SCREEN, type DifficultyId } from '../game/config';
+import { SOLVED_BY } from '../game/obstacles';
 import type { GameState } from '../game/state';
 import { PALETTE, alpha } from '../render/palette';
 import { activeTheme } from '../render/theme';
@@ -22,7 +23,8 @@ const DIFFICULTY_ORDER: readonly DifficultyId[] = ['kid', 'normal', 'hard'];
  * end up drawn somewhere other than where it's tappable.
  */
 export function titleMenu(): MenuRect[] {
-  const w = 108;
+  // Wide enough for the longest subtitle ("2 HP · JUMP FIRE SLIDE").
+  const w = 148;
   const h = 30;
   const gap = 10;
   const totalH = DIFFICULTY_ORDER.length * h + (DIFFICULTY_ORDER.length - 1) * gap;
@@ -31,12 +33,27 @@ export function titleMenu(): MenuRect[] {
   return DIFFICULTY_ORDER.map((id, i) => ({
     id,
     label: DIFFICULTIES[id].label,
-    sub: `${DIFFICULTIES[id].hp} HP`,
+    sub: `${DIFFICULTIES[id].hp} HP  ·  ${verbList(id)}`,
     x: SCREEN.w / 2 - w / 2,
     y: startY + i * (h + gap),
     w,
     h,
   }));
+}
+
+/**
+ * The verbs a difficulty actually asks for, spelled out on its button.
+ *
+ * The modes differ in *what you have to think about* before they differ in
+ * speed, and that's invisible from a name and an HP count. A parent picking
+ * a mode for a small child should be able to see "two buttons" without
+ * playing it first.
+ */
+function verbList(id: DifficultyId): string {
+  const verbs = new Set(DIFFICULTIES[id].allowedKinds.map((kind) => SOLVED_BY[kind]));
+  const names = ['JUMP', 'FIRE'];
+  if (verbs.has('slide')) names.push('SLIDE');
+  return names.join(' ');
 }
 
 export function gameOverMenu(): MenuRect[] {

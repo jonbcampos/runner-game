@@ -9,6 +9,10 @@
  * If you want to change how the game feels, you change it here.
  */
 
+// Type-only, so this stays a leaf module at runtime — obstacles.ts imports the
+// numbers from here, and a real import back would be a cycle.
+import type { ObstacleKind } from './obstacles';
+
 // --- Screen -----------------------------------------------------------------
 
 /**
@@ -33,8 +37,22 @@ export const VIRTUAL_H = 270;
 
 /** Never narrower than the design width, or hazards arrive with no warning. */
 export const MIN_VIRTUAL_W = DESIGN_W;
-/** Caps how much extra reaction time a very wide screen can buy. */
-export const MAX_VIRTUAL_W = 560;
+/**
+ * Caps how much extra reaction time a very wide screen can buy.
+ *
+ * Set wide enough that no real phone letterboxes. It used to be 560, which is
+ * 2.07:1 — narrower than every modern phone, so a 20:9 handset held sideways
+ * got a ~30px black bar at each end of the frame. Hazards then entered at the
+ * bar's edge instead of the screen's, which reads as obstacles popping into
+ * existence a thumb's width inside the display. 640 is 2.37:1 and covers
+ * everything up to 21:9.
+ *
+ * A wider frame does show hazards fractionally sooner, and that is a real if
+ * small advantage. It is partly self-correcting: maxKillableArmour() derives
+ * from SCREEN.w, so a wider screen also allows heavier drones. Popping is the
+ * worse problem — it makes the game look broken rather than merely generous.
+ */
+export const MAX_VIRTUAL_W = 640;
 
 /**
  * The live frame size. Mutated by Viewport on resize; read by everything that
@@ -46,6 +64,21 @@ export const SCREEN = {
   /** True when the device is portrait and the game is being drawn sideways. */
   rotated: false,
 };
+
+/**
+ * How far beyond the right edge of the frame things enter the world.
+ *
+ * One shared constant rather than a literal repeated at each spawn site,
+ * because the director's reaction-time maths has to agree with where obstacles
+ * actually appear. If those two drift apart, the spacing guarantee is computed
+ * against a distance the game isn't using.
+ */
+export const SPAWN_MARGIN = 16;
+
+/** The x an entity enters the world at: just past the right edge of the frame. */
+export function spawnX(): number {
+  return SCREEN.w + SPAWN_MARGIN;
+}
 
 /** Y coordinate of the ground line. Player stands on this. */
 export const GROUND_Y = 210;
@@ -505,6 +538,26 @@ export type DifficultyId = 'kid' | 'normal' | 'hard';
 export interface Difficulty {
   id: DifficultyId;
   label: string;
+
+  /**
+   * Which hazard families this difficulty is allowed to spawn — and therefore,
+   * since every hazard has exactly one answer, which verbs the player needs.
+   *
+   * EASY drops beams entirely, so it is a two-button game: jump and fire. That
+   * came straight from watching Ellie play. The problem wasn't that slide was
+   * hard to perform, it was that a third button is a third thing to *consider*
+   * in the half-second she had — the cost was in the reading, not the doing.
+   * Removing the hazard rather than just hiding the button is the honest fix:
+   * a button you can't press for a hazard that still arrives is a death you
+   * can't avoid.
+   *
+   * The ladder is therefore verbs first, speed second. EASY teaches two verbs,
+   * NORMAL adds the third at almost the same pace, HARD keeps all three and
+   * turns the speed up. Adding a new thing to think about and speeding the
+   * game up at the same time makes it impossible to tell which one beat you.
+   */
+  allowedKinds: readonly ObstacleKind[];
+
   /** Multiplies both base speed and per-sector escalation. */
   speedScale: number;
   /** Multiplies the gap between obstacles. Higher = more reaction time. */
@@ -533,6 +586,7 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
   kid: {
     id: 'kid',
     label: 'EASY',
+    allowedKinds: ['spike', 'drone'],
     speedScale: 0.75,
     spacingScale: 1.5,
     hp: 3,
@@ -543,7 +597,10 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
   normal: {
     id: 'normal',
     label: 'NORMAL',
-    speedScale: 1.0,
+    allowedKinds: ['spike', 'beam', 'drone'],
+    // Only a shade quicker than EASY. The step up to NORMAL is the third verb;
+    // stacking a speed jump on top of it would confuse two separate lessons.
+    speedScale: 0.85,
     spacingScale: 1.0,
     hp: 2,
     maxPatternVerbs: 2,
@@ -553,6 +610,9 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
   hard: {
     id: 'hard',
     label: 'HARD',
+    allowedKinds: ['spike', 'beam', 'drone'],
+    // Same vocabulary as NORMAL, delivered considerably faster. That's the
+    // whole distinction, and it's why the gap here is the big one.
     speedScale: 1.2,
     spacingScale: 0.8,
     hp: 1,

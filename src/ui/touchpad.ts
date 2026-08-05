@@ -25,7 +25,7 @@ export interface TouchButton {
  * gameplay taps alike — flows through one pointer pipeline.
  */
 function buildButtons(): TouchButton[] {
-  return [
+  const buttons: TouchButton[] = [
     {
       action: 'shoot',
       label: 'FIRE',
@@ -34,23 +34,49 @@ function buildButtons(): TouchButton[] {
       r: 26,
       touchPadding: 12,
     },
-    {
-      action: 'jump',
-      label: 'JUMP',
-      cx: SCREEN.w - 44,
-      cy: VIRTUAL_H - 56,
-      r: 28,
-      touchPadding: 12,
-    },
-    {
+  ];
+
+  // With no slide button, jump moves down and in to sit where the thumb
+  // naturally rests. Leaving it high and to the corner would be a layout that
+  // only makes sense as an accommodation for a button that isn't there.
+  const soloJump = !enabledActions.has('slide');
+  buttons.push({
+    action: 'jump',
+    label: 'JUMP',
+    cx: SCREEN.w - (soloJump ? 50 : 44),
+    cy: VIRTUAL_H - (soloJump ? 42 : 56),
+    r: soloJump ? 30 : 28,
+    touchPadding: 12,
+  });
+
+  if (!soloJump) {
+    buttons.push({
       action: 'slide',
       label: 'SLIDE',
       cx: SCREEN.w - 104,
       cy: VIRTUAL_H - 34,
       r: 22,
       touchPadding: 10,
-    },
-  ];
+    });
+  }
+
+  return buttons;
+}
+
+/**
+ * Which verbs this run actually uses.
+ *
+ * EASY has no beams, so it has no slide button — an unusable control is one
+ * more thing to look at and wonder about, which is the exact cost the mode
+ * exists to remove. Held module-side rather than passed in because
+ * hitTestButton() is called from the pointer pipeline, which has no view of
+ * game state and shouldn't need one.
+ */
+let enabledActions: Set<Action> = new Set(['shoot', 'jump', 'slide']);
+
+export function setTouchpadActions(actions: readonly Action[]): void {
+  enabledActions = new Set(actions);
+  cachedWidth = -1;
 }
 
 let cachedWidth = -1;

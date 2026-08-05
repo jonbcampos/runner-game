@@ -1,4 +1,4 @@
-import { GROUND_Y, POWERUP, SCREEN } from './config';
+import { GROUND_Y, POWERUP, spawnX } from './config';
 import type { Aabb } from './collision';
 
 /**
@@ -213,7 +213,7 @@ export class PickupField {
 
   /** Same as the obstacle spawn point, so gaps measured in seconds line up. */
   static get spawnX(): number {
-    return SCREEN.w + 16;
+    return spawnX();
   }
 }
 

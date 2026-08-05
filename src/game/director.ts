@@ -1,4 +1,4 @@
-import { OBSTACLE, PLAYER, PLAYER_X, SCREEN, jumpAirtimeAt, type Difficulty } from './config';
+import { OBSTACLE, PLAYER, PLAYER_X, jumpAirtimeAt, spawnX, type Difficulty } from './config';
 import { SOLVED_BY, type ObstacleKind } from './obstacles';
 import { eligiblePatterns, type Pattern } from './patterns';
 import type { Rng } from '../core/rng';
@@ -59,7 +59,7 @@ export function maxKillableArmour(
   shotCooldown: number = PLAYER.shotCooldown,
 ): number {
   // Time from appearing at the right edge to reaching the player's front.
-  const approach = (SCREEN.w + 16 - (PLAYER_X + PLAYER.width)) / Math.max(scrollSpeed, 1);
+  const approach = (spawnX() - (PLAYER_X + PLAYER.width)) / Math.max(scrollSpeed, 1);
   const usable = approach * OBSTACLE.drone.killSafetyFactor;
   const shots = Math.floor(usable / shotCooldown) + 1;
   return Math.max(OBSTACLE.drone.hp, shots * damagePerShot);
@@ -236,7 +236,11 @@ export class Director {
   }
 
   private pick(ctx: DirectorContext): Pattern {
-    const eligible = eligiblePatterns(ctx.difficulty.maxPatternVerbs, ctx.sector);
+    const eligible = eligiblePatterns(
+      ctx.difficulty.maxPatternVerbs,
+      ctx.sector,
+      ctx.difficulty.allowedKinds,
+    );
     // Avoid repeating the pattern we just played, unless it's the only option
     // (easy mode in sector 1 has a small pool).
     const pool =
