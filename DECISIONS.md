@@ -517,3 +517,77 @@ every ten seconds, rather than pickups being crowded out by their own safety rul
 
 Pickups also now spawn at the same x as obstacles, so gaps measured in seconds actually line up —
 the two spawn points differed by 4px, which was enough to fail the check by 0.03s.
+
+---
+
+## 32. The jump preserves distance, not airtime, when speed changes mid-air
+
+**Found by playing:** jumped a spike at OVERDRIVE speed, the boost expired at the apex, the world
+slowed, and the jump landed short — on the spike.
+
+**The mistake was mine, and it was a reasoned one.** Decision 9 says the jump is defined in
+world-space: how far and how high. But I then froze gravity at takeoff, with a comment saying a
+mid-air speed change shouldn't "warp an arc the player has already committed to". That preserves
+*airtime*, which is the wrong quantity. When the world slows, the same airtime covers far less
+ground, so the jump lands short of what it was aimed at — and the player did nothing wrong.
+
+**The fix:** on a speed change while airborne, scale velocity by k and both gravities by k² (k =
+speed ratio). That leaves the apex untouched and scales airtime by exactly 1/k, so ground covered —
+airtime × speed — is unchanged. The arc you committed to is the arc you get.
+
+**The lesson generalises past this bug:** "don't change it underneath the player" and "keep the
+promise you made to the player" are not the same rule, and when they conflict the second one wins.
+Freezing a value feels safe; what matters is which quantity the design actually guarantees.
+
+---
+
+## 33. Powerups can be parked without being deleted
+
+**Decided:** `PowerupDef.enabled`. FLIGHT and HIGH JUMP are switched off after playtesting — flight
+"sort of worthless but interesting", high jump too close to just jumping.
+
+**Why not delete them:** both work and both are tested. Parking keeps them a one-word change away,
+and the tests keep proving they still function while they're out of rotation, so turning them back
+on later isn't a gamble on code nobody has run in months. Flight is worth revisiting if the sky
+threat gets strong enough to make altitude a real decision.
+
+**Added AUTOFIRE** in their place: fires by itself, fast, with no button held. It's distinct from
+HEAVY SHOT (damage) and LONG SHOT (reach) because what it really gives back is a *thumb* — both
+hands free for jumps and slides. That's what makes a 4-plate drone feel handled rather than frantic.
+
+---
+
+## 34. Two separate ceilings on drone armour
+
+**Decided:** `Difficulty.maxDroneArmour` (kid 3, normal 4, hard 5), on top of the existing
+speed-based ceiling.
+
+**Why two:** they answer different questions. The speed ceiling is about *possibility* — can this be
+killed at all before it reaches you. The difficulty cap is about *demand* — should this mode be
+asking for five fast accurate taps.
+
+They pull in opposite directions, which is what makes both necessary. Easy is the **slowest**
+difficulty, so the possibility ceiling is at its most generous there — a 5-plate drone is entirely
+killable on easy, and it still felt like too much, because the constraint that bit wasn't time, it
+was how frantic it was. A single ceiling could not have expressed that.
+
+**Also:** OVERDRIVE's spawn weight now scales per difficulty (easy ×0.25). It's a genuine hazard,
+and on easy it should be a rare curiosity rather than regular furniture.
+
+---
+
+## 35. The boss randomises everything except reachability
+
+**Decided:** approach distance, phase timings, attack count and hazard order are all randomised, and
+the boss sometimes feints — pulling up short without opening.
+
+**Why:** the fight was correct but a metronome. Once you'd seen one cycle you'd seen them all, and a
+boss you can answer from memory isn't testing anything.
+
+**The one thing that stays guaranteed:** the opening must be inside the gun's reach. Randomness
+against a hard range limit is exactly the shape of bug that shows up rarely and can't be reproduced
+— "I couldn't hit it that one time". So `validateDesignContracts()` checks the far end of the
+approach band against SHOT.range at startup, and the harness walks 25 seeds and verifies every
+opening the boss actually offers. 127 openings checked, furthest 188px against 230px of reach.
+
+Feints never happen twice in a row, so unpredictability can't turn into stalling.

@@ -115,8 +115,11 @@ export function pickDroneArmour(
   scrollSpeed: number,
   rng: Rng,
   shotCooldown: number = PLAYER.shotCooldown,
+  difficultyCap = Infinity,
 ): number {
-  const ceiling = maxKillableArmour(scrollSpeed, 1, shotCooldown);
+  // Two separate ceilings, for two separate reasons: what is *possible* at this
+  // speed, and what this difficulty should be *asking* of the player.
+  const ceiling = Math.min(maxKillableArmour(scrollSpeed, 1, shotCooldown), difficultyCap);
   const eligible = OBSTACLE.drone.tiers.filter(
     (tier) => tier.minSector <= sector && tier.hp <= ceiling,
   );
@@ -207,7 +210,13 @@ export class Director {
 
       const armour =
         beat.kind === 'drone'
-          ? pickDroneArmour(ctx.sector, ctx.scrollSpeed, ctx.rng, ctx.shotCooldown)
+          ? pickDroneArmour(
+              ctx.sector,
+              ctx.scrollSpeed,
+              ctx.rng,
+              ctx.shotCooldown,
+              ctx.difficulty.maxDroneArmour,
+            )
           : 1;
       spawn(beat.kind, armour);
       this.secondsSinceLastSpawn = 0;

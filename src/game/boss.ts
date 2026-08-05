@@ -29,8 +29,9 @@ export type BossPhase =
   | 'dying'
   | 'done';
 
-/** The rotation of hazards a boss throws. One of each, so every verb is used. */
-const ATTACK_CYCLE: readonly ObstacleKind[] = ['spike', 'beam', 'drone'];
+/** The hazards a boss throws. Order is shuffled per run, so every verb is used
+ * but never in a sequence you can memorise. */
+const ATTACK_KINDS: readonly ObstacleKind[] = ['spike', 'beam', 'drone'];
 
 export interface BossContext {
   scrollSpeed: number;
@@ -60,8 +61,15 @@ export class Boss {
 
   private attacksLeft = 0;
   private attackTimer = 0;
-  private attackIndex = 0;
   private lastAttackKind: ObstacleKind | null = null;
+  /** Shuffled each run so the hazard order isn't a fixed cycle. */
+  private attackOrder: ObstacleKind[] = [...ATTACK_KINDS];
+  private attackIndex = 0;
+  /** Where this particular approach is heading. Re-rolled every cycle. */
+  private approachX = 250;
+  /** True when the current approach is a feint and won't open the core. */
+  private feinting = false;
+  private feintedLastCycle = false;
 
   get vulnerable(): boolean {
     return this.phase === 'vulnerable';
@@ -103,9 +111,13 @@ export class Boss {
     this.fromY = this.y;
     this.toY = this.farY;
     this.timer = BOSS.enterDuration;
+    this.moveDuration = BOSS.enterDuration;
     this.hitFlash = 0;
     this.attackIndex = 0;
     this.lastAttackKind = null;
+    this.feinting = false;
+    this.feintedLastCycle = false;
+    this.approachX = BOSS.nearXMin;
   }
 
   reset(): void {
@@ -128,8 +140,8 @@ export class Boss {
 
     switch (this.phase) {
       case 'entering':
-        this.glideToward(BOSS.enterDuration);
-        if (this.timer <= 0) this.beginAttackRun();
+        this.glideToward(this.moveDuration);
+        if (this.timer <= 0) this.beginAttackRun(ctx);
         break;
 
       case 'attacking':
@@ -137,7 +149,7 @@ export class Boss {
         this.y = this.farY;
         this.attackTimer -= dt;
         if (this.attackTimer <= 0 && this.attacksLeft > 0) {
-          const kind = ATTACK_CYCLE[this.attackIndex % ATTACK_CYCLE.length]!;
+          const kind = this.attackOrder[this.attackIndex % this.attackOrder.length]!;
           this.attackIndex++;
           this.attacksLeft--;
           launch(kind, this.x);
@@ -153,31 +165,63 @@ export class Boss {
         // Only close in once the last hazard has had time to arrive, so the
         // player isn't asked to dodge and punish at the same moment.
         if (this.attacksLeft <= 0 && this.attackTimer <= 0) {
-          this.startMove('closing', this.farX, BOSS.nearX, this.farY, this.nearY, BOSS.closeDuration);
+          // Re-roll the approach: how close it comes, how long it takes, and
+          // whether it commits at all.
+          this.approachX = ctx.rng.range(BOSS.nearXMin, BOSS.nearXMax);
+          this.feinting = !this.feintedLastCycle && ctx.rng.next() < BOSS.feintChance;
+          this.startMove(
+            'closing',
+            this.farX,
+            this.feinting ? (this.farX + this.approachX) / 2 : this.approachX,
+            this.farY,
+            this.feinting ? (this.farY + this.nearY) / 2 : this.nearY,
+            this.jitter(BOSS.closeDuration, ctx),
+          );
         }
         break;
 
       case 'closing':
-        this.glideToward(BOSS.closeDuration);
+        this.glideToward(this.moveDuration);
         if (this.timer <= 0) {
-          this.phase = 'vulnerable';
-          this.timer = BOSS.vulnerableDuration;
-          this.x = BOSS.nearX;
-          this.y = this.nearY;
+          if (this.feinting) {
+            // Pulled up short. No opening this time.
+            this.feintedLastCycle = true;
+            this.startMove(
+              'retreating',
+              this.x,
+              this.farX,
+              this.y,
+              this.farY,
+              this.jitter(BOSS.retreatDuration, ctx),
+            );
+          } else {
+            this.feintedLastCycle = false;
+            this.phase = 'vulnerable';
+            this.timer = this.jitter(BOSS.vulnerableDuration, ctx);
+            this.x = this.approachX;
+            this.y = this.nearY;
+          }
         }
         break;
 
       case 'vulnerable':
-        this.x = BOSS.nearX;
+        this.x = this.approachX;
         this.y = this.nearY;
         if (this.timer <= 0) {
-          this.startMove('retreating', BOSS.nearX, this.farX, this.nearY, this.farY, BOSS.retreatDuration);
+          this.startMove(
+            'retreating',
+            this.approachX,
+            this.farX,
+            this.nearY,
+            this.farY,
+            this.jitter(BOSS.retreatDuration, ctx),
+          );
         }
         break;
 
       case 'retreating':
-        this.glideToward(BOSS.retreatDuration);
-        if (this.timer <= 0) this.beginAttackRun();
+        this.glideToward(this.moveDuration);
+        if (this.timer <= 0) this.beginAttackRun(ctx);
         break;
 
       case 'dying':
@@ -195,13 +239,29 @@ export class Boss {
     }
   }
 
-  private beginAttackRun(): void {
+  private beginAttackRun(ctx: BossContext): void {
     this.phase = 'attacking';
     this.x = this.farX;
-    this.attacksLeft = BOSS.attacksPerRun;
+    this.attacksLeft = ctx.rng.int(BOSS.attacksPerRunMin, BOSS.attacksPerRunMax);
+    // Shuffle the hazard order so the fight can't be answered from memory.
+    for (let i = this.attackOrder.length - 1; i > 0; i--) {
+      const j = ctx.rng.int(0, i);
+      const tmp = this.attackOrder[i]!;
+      this.attackOrder[i] = this.attackOrder[j]!;
+      this.attackOrder[j] = tmp;
+    }
+    this.attackIndex = 0;
     // A moment of warning before the first hazard of a run.
     this.attackTimer = 0.5;
   }
+
+  /** Vary a phase duration, so the rhythm isn't a metronome. */
+  private jitter(seconds: number, ctx: BossContext): number {
+    return seconds * ctx.rng.range(1 - BOSS.timingJitter, 1 + BOSS.timingJitter);
+  }
+
+  /** Duration of the move currently in progress, for the easing curve. */
+  private moveDuration = 1;
 
   private startMove(
     phase: BossPhase,
@@ -212,6 +272,7 @@ export class Boss {
     duration: number,
   ): void {
     this.phase = phase;
+    this.moveDuration = duration;
     this.fromX = fromX;
     this.toX = toX;
     this.fromY = fromY;

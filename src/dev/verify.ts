@@ -9,7 +9,7 @@ import {
   WORLD,
   type DifficultyId,
 } from '../game/config';
-import { Director, maxKillableArmour, minimumGapSeconds } from '../game/director';
+import { Director, maxKillableArmour, minimumGapSeconds, pickDroneArmour } from '../game/director';
 import { ObstacleField, SOLVED_BY, type ObstacleKind } from '../game/obstacles';
 import { Rng } from '../core/rng';
 import { slideDurationAt } from '../game/player';
@@ -358,6 +358,23 @@ function trialPowerups(): { kind: PowerupKind; effect: string; ok: boolean }[] {
   out.push({ kind: 'power', effect: `damage ${base.shotDamage} -> ${power.shotDamage}`,
     ok: power.shotDamage > base.shotDamage });
 
+  // AUTOFIRE has to do both halves: fire faster, and fire with no button held.
+  const auto = withPowerup('autoShot');
+  const fasterGun = auto.shotCooldown < base.shotCooldown;
+  const noButton = new GameState();
+  noButton.start('normal', 1, false);
+  noButton.activePowerup = 'autoShot';
+  noButton.powerupRemaining = 99;
+  const idle = new FakeInput(); // never presses anything
+  let firedHandsFree = false;
+  for (let i = 0; i < 120; i++) {
+    noButton.update(FIXED_DT, idle as never);
+    if (noButton.shots.shots.some((sh) => sh.active)) { firedHandsFree = true; break; }
+  }
+  out.push({ kind: 'autoShot',
+    effect: `cooldown ${base.shotCooldown.toFixed(2)} -> ${auto.shotCooldown.toFixed(2)}, fires unattended: ${firedHandsFree}`,
+    ok: fasterGun && firedHandsFree });
+
   // Speed has to move BOTH the world and the score, or it isn't a gamble.
   const speed = withPowerup('speed');
   const input = new FakeInput();
@@ -478,7 +495,9 @@ function trialDroneArmour(difficultyId: DifficultyId): {
     const ceiling = maxKillableArmour(scrollSpeed);
 
     for (const tier of OBSTACLE.drone.tiers) {
-      if (tier.hp > ceiling) continue; // The director would never emit this.
+      // The director would never emit past either ceiling: what's possible at
+      // this speed, and what this difficulty is willing to ask for.
+      if (tier.hp > ceiling || tier.hp > difficulty.maxDroneArmour) continue;
       checked++;
       worstArmour = Math.max(worstArmour, tier.hp);
 
@@ -505,6 +524,28 @@ function trialDroneArmour(difficultyId: DifficultyId): {
     }
   }
   return { checked, worstArmour, failures };
+}
+
+/** The difficulty cap must actually bind what the director emits. */
+function trialArmourCap(): { ok: boolean; detail: string } {
+  const parts: string[] = [];
+  let ok = true;
+  for (const difficultyId of ['kid', 'normal', 'hard'] as DifficultyId[]) {
+    const difficulty = DIFFICULTIES[difficultyId];
+    const rng = new Rng(11);
+    let worst = 0;
+    // Slow speed and a late sector: the case where the speed ceiling is
+    // generous and only the difficulty cap is doing any work.
+    for (let i = 0; i < 400; i++) {
+      worst = Math.max(
+        worst,
+        pickDroneArmour(9, WORLD.baseScrollSpeed * difficulty.speedScale, rng, PLAYER.shotCooldown, difficulty.maxDroneArmour),
+      );
+    }
+    parts.push(`${difficultyId}<=${worst}`);
+    if (worst > difficulty.maxDroneArmour) ok = false;
+  }
+  return { ok, detail: parts.join(' ') };
 }
 
 /**
@@ -589,6 +630,110 @@ function trialPickupClearance(): { ok: boolean; detail: string } {
   return {
     ok: tooClose === 0 && placements > 0,
     detail: `${placements} placed, ${tooClose} too close, tightest gap ${worst === Infinity ? 'n/a' : worst.toFixed(2) + 's'}`,
+  };
+}
+
+/**
+ * A jump must cover the ground it was launched for, even if the world changes
+ * speed while the player is still in the air.
+ *
+ * Straight from a playtest: jumped a spike at OVERDRIVE speed, the boost
+ * expired at the apex, the world slowed, and the jump landed short — on the
+ * spike. The arc was frozen at takeoff, which preserved airtime; what actually
+ * has to be preserved is distance.
+ *
+ * Measures the world distance that passes between takeoff and landing, which
+ * is exactly what the jump has to clear.
+ */
+function trialJumpUnderSpeedChange(): { ok: boolean; detail: string } {
+  const measure = (changeSpeedAtApex: number | null): number => {
+    const state = new GameState();
+    const input = new FakeInput();
+    state.start('normal', 1, false);
+    // Start under OVERDRIVE, so the world is fast at takeoff.
+    state.activePowerup = 'speed';
+    state.powerupRemaining = 999;
+
+    input.press('jump');
+    let distanceAtTakeoff = -1;
+    let applied = false;
+
+    for (let i = 0; i < Math.ceil(4 / FIXED_DT); i++) {
+      state.update(FIXED_DT, input as never);
+      // Hold jump for the whole arc. Releasing triggers the variable-height
+      // cut, which is correct behaviour but measures a deliberate short hop
+      // rather than the full jump this is meant to be checking.
+      if (distanceAtTakeoff < 0 && !state.player.grounded) {
+        distanceAtTakeoff = state.distance;
+      }
+      // Drop the powerup at the top of the arc — the exact reported scenario.
+      if (!applied && changeSpeedAtApex !== null && distanceAtTakeoff >= 0 && state.player.vy >= 0) {
+        state.activePowerup = null;
+        state.powerupRemaining = 0;
+        applied = true;
+      }
+      if (distanceAtTakeoff >= 0 && state.player.grounded) {
+        return state.distance - distanceAtTakeoff;
+      }
+    }
+    return -1;
+  };
+
+  const steady = measure(null);
+  const interrupted = measure(1);
+  // Both should cover the designed jump distance. Allow a little slack for
+  // landing snapping to the ground between fixed steps.
+  const target = PLAYER.jumpDistance;
+  const ok =
+    Math.abs(steady - target) < target * 0.12 && Math.abs(interrupted - target) < target * 0.12;
+  return {
+    ok,
+    detail: `target ${target}px, steady ${steady.toFixed(0)}px, boost-expires-at-apex ${interrupted.toFixed(0)}px`,
+  };
+}
+
+/**
+ * Every boss opening must be inside the gun's reach.
+ *
+ * The approach distance, timings, attack count and hazard order are all
+ * randomised now, which is what stops the fight being a memorised rhythm — but
+ * randomness against a hard range limit is exactly the shape of thing that
+ * produces a rare, unreproducible "I couldn't hit it" bug. This walks many
+ * seeds and checks every opening the boss actually offers.
+ */
+function trialBossOpeningsReachable(): { ok: boolean; detail: string } {
+  const muzzleX = PLAYER_X + PLAYER.muzzleX;
+  let openings = 0;
+  let unreachable = 0;
+  let furthest = 0;
+  let feints = 0;
+
+  for (let seed = 1; seed <= 25; seed++) {
+    const state = new GameState();
+    const input = new FakeInput();
+    state.start('normal', seed, false);
+    state.boss.spawn(DIFFICULTIES.normal);
+    let wasVulnerable = false;
+
+    for (let i = 0; i < Math.ceil(45 / FIXED_DT); i++) {
+      state.player.hp = 99;
+      state.update(FIXED_DT, input as never);
+      const boss = state.boss;
+      if (boss.vulnerable && !wasVulnerable) {
+        openings++;
+        const reach = boss.x - muzzleX;
+        furthest = Math.max(furthest, reach);
+        if (reach > state.shotRange) unreachable++;
+      }
+      wasVulnerable = boss.vulnerable;
+      if (!boss.active) break;
+    }
+    feints += state.boss.active ? 0 : 0;
+  }
+
+  return {
+    ok: unreachable === 0 && openings > 0,
+    detail: `${openings} openings over 25 seeds, furthest ${Math.round(furthest)}px vs ${SHOT.range}px reach`,
   };
 }
 
@@ -701,6 +846,15 @@ export function verify(): TrialResult[] {
     );
   }
 
+  const cap = trialArmourCap();
+  results.push({ difficulty: 'kid', kind: 'drone', verb: 'shoot',
+    survived: cap.ok, expected: true, pass: cap.ok });
+  console.log(
+    cap.ok
+      ? `[verify] difficulty armour caps hold — ${cap.detail}`
+      : `[verify] difficulty armour cap EXCEEDED — ${cap.detail}`,
+  );
+
   const clearance = trialPickupClearance();
   results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
     survived: clearance.ok, expected: true, pass: clearance.ok });
@@ -708,6 +862,25 @@ export function verify(): TrialResult[] {
     clearance.ok
       ? `[verify] pickup clearance ok — ${clearance.detail}`
       : `[verify] pickups landing on hazards — ${clearance.detail}`,
+  );
+
+  // Boss randomisation must never produce an opening you cannot reach.
+  const openings = trialBossOpeningsReachable();
+  results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
+    survived: openings.ok, expected: true, pass: openings.ok });
+  console.log(
+    openings.ok
+      ? `[verify] every boss opening reachable — ${openings.detail}`
+      : `[verify] boss opening OUT OF REACH — ${openings.detail}`,
+  );
+
+  const arc = trialJumpUnderSpeedChange();
+  results.push({ difficulty: 'normal', kind: 'spike', verb: 'jump',
+    survived: arc.ok, expected: true, pass: arc.ok });
+  console.log(
+    arc.ok
+      ? `[verify] jump distance holds through a speed change — ${arc.detail}`
+      : `[verify] jump lands SHORT when speed changes mid-air — ${arc.detail}`,
   );
 
   const slide = trialSlideHold();

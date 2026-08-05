@@ -18,6 +18,8 @@ export interface PlayerMods {
   jumpRiseScale: number;
   /** Scales the gap between shots. Below 1 fires faster. */
   shotCooldownScale: number;
+  /** AUTOFIRE: keep shooting with no button held. */
+  autoFire: boolean;
   /** FLIGHT: vertical control replaces the jump arc entirely. */
   flying: boolean;
 }
@@ -26,6 +28,7 @@ export const NO_MODS: PlayerMods = {
   jumpApexScale: 1,
   jumpRiseScale: 1,
   shotCooldownScale: 1,
+  autoFire: false,
   flying: false,
 };
 
@@ -111,12 +114,17 @@ export class Player {
   private jumpCut = false;
 
   /**
-   * Gravity for the arc currently in progress. Captured at takeoff and held for
-   * the whole jump, so a mid-air speed change (a sector boundary, say) can't
-   * warp an arc the player has already committed to.
+   * Gravity for the arc currently in progress, and the scroll speed it was
+   * solved for.
+   *
+   * These get *re-solved* if the world's speed changes mid-air — see
+   * `retuneArcForSpeed`. An earlier version froze them at takeoff, reasoning
+   * that a committed arc shouldn't be warped underneath the player. That was
+   * the wrong invariant and it killed a real run.
    */
   private gravityUp = 0;
   private gravityDown = 0;
+  private arcSpeed = 1;
 
   reset(hp: number, scrollSpeed: number): void {
     this.feetY = GROUND_Y;
@@ -136,6 +144,7 @@ export class Player {
     const arc = solveJumpArc(scrollSpeed);
     this.gravityUp = arc.gravityUp;
     this.gravityDown = arc.gravityDown;
+    this.arcSpeed = Math.max(1, scrollSpeed);
   }
 
   get invulnerable(): boolean {
@@ -193,11 +202,13 @@ export class Player {
       if (this.feetY < ceiling) { this.feetY = ceiling; this.vy = 0; }
       if (this.feetY > floor) { this.feetY = floor; this.vy = 0; }
 
-      return this.tryShoot(input, mods.shotCooldownScale);
+      return this.tryShoot(input, mods.shotCooldownScale, mods.autoFire);
     }
 
     // Leaving flight mid-air: fall normally from wherever you were.
     if (this.pose === 'fly') this.pose = 'air';
+
+    this.retuneArcForSpeed(scrollSpeed);
 
     // --- Slide ---------------------------------------------------------
     // Slide is ground-only. A slide pressed in mid-air stays in the input
@@ -233,6 +244,7 @@ export class Player {
       const arc = solveJumpArc(scrollSpeed, mods.jumpApexScale, mods.jumpRiseScale);
       this.gravityUp = arc.gravityUp;
       this.gravityDown = arc.gravityDown;
+      this.arcSpeed = Math.max(1, scrollSpeed);
       this.vy = -arc.velocity;
       this.grounded = false;
       this.coyote = 0;
@@ -252,7 +264,7 @@ export class Player {
       this.jumpCut = true;
     }
 
-    const shot = this.tryShoot(input, mods.shotCooldownScale);
+    const shot = this.tryShoot(input, mods.shotCooldownScale, mods.autoFire);
 
     this.applyGravity(dt);
     this.integrate(dt);
@@ -264,8 +276,8 @@ export class Player {
    * Fire if the button is down and the cooldown has elapsed.
    * A fresh press fires immediately; holding auto-fires at the cooldown rate.
    */
-  private tryShoot(input: Input, cooldownScale = 1): ShotRequest | null {
-    const wantsToShoot = input.consume('shoot') || input.down.shoot;
+  private tryShoot(input: Input, cooldownScale = 1, autoFire = false): ShotRequest | null {
+    const wantsToShoot = autoFire || input.consume('shoot') || input.down.shoot;
     if (!wantsToShoot || this.shotCooldownTimer > 0) return null;
     this.shotCooldownTimer = PLAYER.shotCooldown * cooldownScale;
     return {
@@ -289,6 +301,38 @@ export class Player {
     if (this.shotCooldownTimer > 0) this.shotCooldownTimer -= dt;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
     if (!this.grounded && this.coyote > 0) this.coyote -= dt;
+  }
+
+  /**
+   * Keep an in-progress jump covering the distance it was launched for, even if
+   * the world changes speed underneath it.
+   *
+   * The jump is defined in world-space — how far and how high (see
+   * `jumpDistance`). Freezing gravity at takeoff preserves the *airtime*, which
+   * is the wrong quantity: when OVERDRIVE expires mid-air the world slows down,
+   * the frozen arc still lands after the same number of seconds, and so it
+   * covers far less ground than it was aimed at. That is a real death — you
+   * jump a spike at speed, the boost runs out at the apex, and you come down on
+   * top of it having done nothing wrong.
+   *
+   * Scaling velocity by k and gravity by k² (where k is the speed ratio) leaves
+   * the apex height untouched and scales the airtime by exactly 1/k — so the
+   * ground covered, airtime × speed, is unchanged. The arc you committed to is
+   * the arc you get.
+   */
+  private retuneArcForSpeed(scrollSpeed: number): void {
+    if (this.grounded) {
+      this.arcSpeed = Math.max(1, scrollSpeed);
+      return;
+    }
+    const speed = Math.max(1, scrollSpeed);
+    const k = speed / this.arcSpeed;
+    if (Math.abs(k - 1) < 1e-6) return;
+
+    this.vy *= k;
+    this.gravityUp *= k * k;
+    this.gravityDown *= k * k;
+    this.arcSpeed = speed;
   }
 
   private applyGravity(dt: number): void {

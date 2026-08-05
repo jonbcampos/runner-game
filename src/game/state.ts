@@ -152,9 +152,15 @@ export class GameState {
     return this.activePowerup === 'power' ? POWERUP.powerDamage : SHOT.damage;
   }
 
-  /** Seconds between shots right now, including any OVERDRIVE scaling. */
+  /** Seconds between shots right now, including OVERDRIVE and AUTOFIRE. */
   get shotCooldown(): number {
-    return PLAYER.shotCooldown / this.speedMultiplier;
+    const auto = this.activePowerup === 'autoShot' ? POWERUP.autoShotCooldownScale : 1;
+    return (PLAYER.shotCooldown * auto) / this.speedMultiplier;
+  }
+
+  /** AUTOFIRE keeps shooting without the button held. */
+  get autoFire(): boolean {
+    return this.activePowerup === 'autoShot';
   }
 
   get flying(): boolean {
@@ -244,7 +250,8 @@ export class GameState {
       jumpRiseScale: this.activePowerup === 'highJump' ? POWERUP.jumpRiseScale : 1,
       // Inverse of the speed multiplier: the world and the gun scale together,
       // which is what keeps drone armour killable through an OVERDRIVE.
-      shotCooldownScale: 1 / this.speedMultiplier,
+      shotCooldownScale: this.shotCooldown / PLAYER.shotCooldown,
+      autoFire: this.autoFire,
       flying: this.flying,
     });
     if (shot && !this.player.dead) {
@@ -325,7 +332,7 @@ export class GameState {
     if (this.director.secondsSinceLastSpawn < POWERUP.clearanceBeforeSeconds) return;
 
     const random = () => this.rng.next();
-    const kind = pickPowerup(random);
+    const kind = pickPowerup(random, this.difficulty.riskyWeightScale);
     this.pickups.spawn(kind, PickupField.spawnX, pickupY(kind, random));
     // Push the next hazard back so the pickup gets a beat of its own.
     this.director.reserveGap(POWERUP.clearanceAfterSeconds);
@@ -558,6 +565,25 @@ export function validateDesignContracts(): string[] {
   check(
     slideSlack >= 40,
     `slide covers ${PLAYER.slideDistance}px but a beam's danger window is ${beamDangerWindow}px — only ${slideSlack}px of timing slack, needs 40+`,
+  );
+
+  // The boss's opening must be inside the gun's reach, or the fight is
+  // unwinnable. The approach distance is randomised, so this checks the worst
+  // case rather than a representative one.
+  const muzzleX = PLAYER_X + PLAYER.muzzleX;
+  const bossReach = BOSS.nearXMax - muzzleX;
+  check(
+    bossReach <= SHOT.range,
+    `boss closes to ${BOSS.nearXMax} but the muzzle at ${muzzleX} only reaches ${SHOT.range}px — the core would be unhittable at the far end of its approach`,
+  );
+
+  // ...and low enough that shots, which leave the muzzle near the ground,
+  // actually intersect it.
+  const bossTop = GROUND_Y - BOSS.height - BOSS.nearBottomGap;
+  const muzzleY = GROUND_Y - PLAYER.height + PLAYER.muzzleYStand;
+  check(
+    muzzleY > bossTop && muzzleY < bossTop + BOSS.height,
+    `boss spans ${bossTop}-${bossTop + BOSS.height} when open but shots fly at y=${muzzleY} — they would pass by it`,
   );
 
   check(OBSTACLE.drone.bottomGap < slideH, `drone gap (${OBSTACLE.drone.bottomGap}) fits a slide (${slideH}) — slideable, should require shooting`);

@@ -360,17 +360,36 @@ export const BOSS = {
 
   /** Distance from the right edge while launching hazards. */
   farInset: 74,
-  /** Absolute x it closes to when vulnerable — inside SHOT.range of the muzzle. */
-  nearX: 250,
+  /**
+   * Range of distances it closes to when vulnerable.
+   *
+   * Randomised per approach so the fight stops being one memorised rhythm. The
+   * far end must stay inside SHOT.range of the muzzle or the opening isn't an
+   * opening — validateDesignContracts() checks that, so widening this band
+   * can't quietly make the boss unhittable.
+   */
+  nearXMin: 200,
+  nearXMax: 300,
 
   enterDuration: 1.3,
-  /** Hazards launched per attack run. */
-  attacksPerRun: 3,
+  /** Hazards launched per attack run, randomised within this range. */
+  attacksPerRunMin: 2,
+  attacksPerRunMax: 4,
   /** Authored gap between launches; the real gap also respects the verb floor. */
   attackGap: 1.15,
   closeDuration: 0.75,
   vulnerableDuration: 1.3,
   retreatDuration: 0.75,
+  /** Phase durations are jittered by up to this fraction, either way. */
+  timingJitter: 0.25,
+  /**
+   * Chance it aborts an approach and pulls back without opening.
+   *
+   * A feint costs you nothing but a wasted volley of shots, and it stops the
+   * fight from being a metronome you can play with your eyes closed. Never two
+   * in a row, so it can't stall the fight.
+   */
+  feintChance: 0.28,
   deathDuration: 1.6,
 
   /** Healed on victory, capped at the run's max. */
@@ -451,6 +470,16 @@ export const POWERUP = {
   rangeScale: 2.3,
 
   /**
+   * AUTOFIRE: shoots continuously, and much faster, with no button held.
+   *
+   * Distinct from HEAVY SHOT (damage) and LONG SHOT (reach) because it gives
+   * back a *thumb*: with the gun firing itself, both hands are free for jumps
+   * and slides. That's the real power, and it's what makes heavy drones
+   * comfortable rather than frantic.
+   */
+  autoShotCooldownScale: 0.4,
+
+  /**
    * REPAIR: how far above the difficulty's starting HP you can stack hearts.
    *
    * Capped so a lucky run of pickups can't turn HARD into a game where mistakes
@@ -484,6 +513,20 @@ export interface Difficulty {
   hp: number;
   /** Max number of distinct verbs a pattern may demand (used by the M3 director). */
   maxPatternVerbs: number;
+  /**
+   * Heaviest drone armour this difficulty will ever spawn.
+   *
+   * Separate from the speed-based ceiling, and for a different reason: that one
+   * is about possibility, this one is about demand. A 5-plate drone is
+   * *possible* on easy — easy is the slowest, so there's the most time — but it
+   * still asks for five fast, accurate taps, which is not what easy is for.
+   */
+  maxDroneArmour: number;
+  /**
+   * Scales the spawn weight of risky pickups. OVERDRIVE is a genuine hazard,
+   * and on easy it should be a rare curiosity rather than a regular threat.
+   */
+  riskyWeightScale: number;
 }
 
 export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
@@ -494,6 +537,8 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
     spacingScale: 1.5,
     hp: 3,
     maxPatternVerbs: 1,
+    maxDroneArmour: 3,
+    riskyWeightScale: 0.25,
   },
   normal: {
     id: 'normal',
@@ -502,6 +547,8 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
     spacingScale: 1.0,
     hp: 2,
     maxPatternVerbs: 2,
+    maxDroneArmour: 4,
+    riskyWeightScale: 1,
   },
   hard: {
     id: 'hard',
@@ -510,6 +557,8 @@ export const DIFFICULTIES: Record<DifficultyId, Difficulty> = {
     spacingScale: 0.8,
     hp: 1,
     maxPatternVerbs: 3,
+    maxDroneArmour: 5,
+    riskyWeightScale: 1.3,
   },
 };
 
