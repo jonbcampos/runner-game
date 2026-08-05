@@ -232,7 +232,7 @@ function trialDirectorSpacing(): { difficulty: DifficultyId; violations: number;
     // Deep into a run, so late-sector patterns and the tightened rest are covered.
     for (let step = 0; step < Math.ceil(300 / FIXED_DT); step++) {
       const sector = Math.floor(elapsed / WORLD.sectorLength) + 1;
-      director.update(FIXED_DT, { difficulty, sector, scrollSpeed, rng }, (kind) => {
+      director.update(FIXED_DT, { difficulty, sector, scrollSpeed, shotCooldown: PLAYER.shotCooldown, rng }, (kind) => {
         if (lastKind) {
           const gap = elapsed - lastSpawnAt;
           // One step of tolerance: spawns land on tick boundaries.
@@ -507,6 +507,91 @@ function trialDroneArmour(difficultyId: DifficultyId): {
   return { checked, worstArmour, failures };
 }
 
+/**
+ * Grabbing OVERDRIVE must not retroactively make an in-flight drone unkillable.
+ *
+ * Straight from a playtest: collected a speed boost in sector 2, ran into a
+ * drone, and couldn't shoot it down in time. The armour ceiling was being
+ * evaluated when the drone spawned, but OVERDRIVE speeds the world up
+ * afterwards — so a drone chosen as fair became impossible mid-flight, and the
+ * death traced back to a decision made seconds earlier with nothing on screen
+ * to warn you.
+ *
+ * This spawns the heaviest drone the director would allow at normal speed,
+ * then switches OVERDRIVE on while it's already inbound.
+ */
+function trialOverdriveKillability(difficultyId: DifficultyId): {
+  ok: boolean;
+  detail: string;
+} {
+  const difficulty = DIFFICULTIES[difficultyId];
+  const scrollSpeed = WORLD.baseScrollSpeed * difficulty.speedScale;
+  const armour = maxKillableArmour(scrollSpeed);
+  const tier = Math.min(armour, Math.max(...OBSTACLE.drone.tiers.map((t) => t.hp)));
+
+  const state = new GameState();
+  const input = new FakeInput();
+  state.start(difficultyId, 1, false);
+  const drone = state.obstacles.spawn('drone', ObstacleField.spawnX, undefined, tier);
+  if (!drone) return { ok: false, detail: 'could not spawn drone' };
+
+  input.press('shoot');
+  let killed = false;
+  for (let i = 0; i < Math.ceil(8 / FIXED_DT); i++) {
+    // Worst case: the boost lands the instant the drone appears.
+    state.activePowerup = 'speed';
+    state.powerupRemaining = 99;
+    state.player.hp = 99;
+    state.update(FIXED_DT, input as never);
+    if (!drone.active || drone.hp <= 0) { killed = true; break; }
+    if (drone.x + drone.w < PLAYER_X) break;
+  }
+  return { ok: killed, detail: `${tier}-plate drone with OVERDRIVE active` };
+}
+
+/** A pickup must never be placed on top of an incoming hazard. */
+function trialPickupClearance(): { ok: boolean; detail: string } {
+  const state = new GameState();
+  const input = new FakeInput();
+  state.start('normal', 5);
+  // Hold fire so bosses actually die. Without this the first boss blocks the
+  // director for the rest of the run and the sample only covers the opening
+  // 40 seconds — which looks like pickups being starved when they aren't.
+  input.press('shoot');
+
+  let placements = 0;
+  let tooClose = 0;
+  let worst = Infinity;
+  let previousActive = 0;
+
+  for (let i = 0; i < Math.ceil(180 / FIXED_DT); i++) {
+    state.player.hp = 99;
+    state.update(FIXED_DT, input as never);
+
+    const pickups = state.pickups.items.filter((p) => p.active);
+    if (pickups.length > previousActive) {
+      // Measure the thing that actually matters: how far apart the pickup and
+      // the nearest hazard will arrive. Both travel at the scroll speed, so
+      // the x gap converts straight to seconds.
+      const fresh = pickups[pickups.length - 1]!;
+      let nearest = Infinity;
+      for (const obstacle of state.obstacles.items) {
+        if (!obstacle.active) continue;
+        nearest = Math.min(nearest, Math.abs(obstacle.x - fresh.x) / state.scrollSpeed);
+      }
+      placements++;
+      worst = Math.min(worst, nearest);
+      // Either side must clear the smaller of the two windows.
+      if (nearest < POWERUP.clearanceBeforeSeconds - FIXED_DT * 2) tooClose++;
+    }
+    previousActive = pickups.length;
+  }
+  return {
+    ok: tooClose === 0 && placements > 0,
+    detail: `${placements} placed, ${tooClose} too close, tightest gap ${worst === Infinity ? 'n/a' : worst.toFixed(2) + 's'}`,
+  };
+}
+
 export function verify(): TrialResult[] {
   const kinds: ObstacleKind[] = ['spike', 'beam', 'drone'];
   const verbs: (Action | 'nothing')[] = ['jump', 'slide', 'shoot', 'nothing'];
@@ -604,6 +689,26 @@ export function verify(): TrialResult[] {
         : `[verify] UNKILLABLE drones on ${difficultyId}: ${armour.failures.join(', ')}`,
     );
   }
+
+  for (const difficultyId of ['kid', 'normal', 'hard'] as DifficultyId[]) {
+    const od = trialOverdriveKillability(difficultyId);
+    results.push({ difficulty: difficultyId, kind: 'drone', verb: 'shoot',
+      survived: od.ok, expected: true, pass: od.ok });
+    console.log(
+      od.ok
+        ? `[verify] OVERDRIVE keeps drones killable on ${difficultyId} (${od.detail})`
+        : `[verify] OVERDRIVE makes drones UNKILLABLE on ${difficultyId} (${od.detail})`,
+    );
+  }
+
+  const clearance = trialPickupClearance();
+  results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
+    survived: clearance.ok, expected: true, pass: clearance.ok });
+  console.log(
+    clearance.ok
+      ? `[verify] pickup clearance ok — ${clearance.detail}`
+      : `[verify] pickups landing on hazards — ${clearance.detail}`,
+  );
 
   const slide = trialSlideHold();
   for (const [name, ok] of Object.entries(slide)) {

@@ -388,8 +388,40 @@ export const POWERUP = {
   spawnIntervalMin: 9,
   spawnIntervalMax: 15,
 
+  /**
+   * Breathing room a pickup needs on either side, in seconds.
+   *
+   * Pickups spawn on their own timer, independent of the director, so without
+   * this a pickup and a hazard arrive together — and collecting something that
+   * instantly changes how you play while a drone is already on top of you is a
+   * death you cannot read. Grabbing a powerup should be its own beat.
+   *
+   * Asymmetric, and deliberately smaller than it first looks. Requiring the
+   * same generous gap on both sides means demanding a window twice that wide,
+   * which the pacing simply never produces — the first version asked for 1.1s
+   * each way and placed exactly zero pickups in three minutes of play. The
+   * hazard *after* the pickup needs more room than the one before, because
+   * that's the one you have to answer while still processing what you grabbed.
+   */
+  clearanceAfterSeconds: 0.7,
+  clearanceBeforeSeconds: 0.4,
+
   // --- Effect magnitudes ---
-  /** OVERDRIVE: the gamble. Faster world, but score accrues much faster too. */
+  /**
+   * OVERDRIVE: the gamble. Faster world, but score accrues much faster too.
+   *
+   * The fire rate scales with it, and that is not a buff — it's what keeps the
+   * powerup honest. A drone's armour is chosen for what's killable at the
+   * speed it spawned at; speeding the world up afterwards would retroactively
+   * make an in-flight drone impossible to destroy, and you'd die to a decision
+   * you made several seconds earlier with no way to see it coming.
+   *
+   * Scaling the gun by the same factor makes killable-armour invariant: the
+   * approach time shrinks by 1.4x and the shot interval shrinks by 1.4x, so
+   * the number of shots you can land is unchanged. The gamble is intact —
+   * you still have less time to read and answer everything — but it can no
+   * longer hand you an unwinnable situation.
+   */
   speedScale: 1.4,
   speedScoreScale: 1.9,
 

@@ -152,6 +152,11 @@ export class GameState {
     return this.activePowerup === 'power' ? POWERUP.powerDamage : SHOT.damage;
   }
 
+  /** Seconds between shots right now, including any OVERDRIVE scaling. */
+  get shotCooldown(): number {
+    return PLAYER.shotCooldown / this.speedMultiplier;
+  }
+
   get flying(): boolean {
     return this.activePowerup === 'flight';
   }
@@ -237,6 +242,9 @@ export class GameState {
     const shot = this.player.update(dt, input, this.scrollSpeed, {
       jumpApexScale: this.activePowerup === 'highJump' ? POWERUP.jumpApexScale : 1,
       jumpRiseScale: this.activePowerup === 'highJump' ? POWERUP.jumpRiseScale : 1,
+      // Inverse of the speed multiplier: the world and the gun scale together,
+      // which is what keeps drone armour killable through an OVERDRIVE.
+      shotCooldownScale: 1 / this.speedMultiplier,
       flying: this.flying,
     });
     if (shot && !this.player.dead) {
@@ -309,10 +317,18 @@ export class GameState {
     if (!this.directorEnabled || this.boss.blocking) return;
     this.pickupTimer -= dt;
     if (this.pickupTimer > 0) return;
+    // Wait for a gap in the hazards rather than dropping a pickup on top of
+    // one. Both sides matter: a hazard that spawned a moment ago is still
+    // sitting right next to the spawn point. Retries next tick rather than
+    // resetting the timer, so waiting for clearance never costs the pickup.
+    // Only the trailing side has to occur naturally; retries next tick.
+    if (this.director.secondsSinceLastSpawn < POWERUP.clearanceBeforeSeconds) return;
 
     const random = () => this.rng.next();
     const kind = pickPowerup(random);
     this.pickups.spawn(kind, PickupField.spawnX, pickupY(kind, random));
+    // Push the next hazard back so the pickup gets a beat of its own.
+    this.director.reserveGap(POWERUP.clearanceAfterSeconds);
     this.pickupTimer = this.rng.range(POWERUP.spawnIntervalMin, POWERUP.spawnIntervalMax);
   }
 
@@ -421,6 +437,7 @@ export class GameState {
         difficulty: this.difficulty,
         sector: this.sector,
         scrollSpeed: this.scrollSpeed,
+        shotCooldown: this.shotCooldown,
         rng: this.rng,
       },
       (kind, armour) => this.obstacles.spawn(kind, ObstacleField.spawnX, undefined, armour),

@@ -472,3 +472,48 @@ costing anything, and the one-hit tension is the entire point of that difficulty
 
 It's drawn in the same cyan as the HUD hearts, so what it does is obvious without a legend — the
 same reasoning as the armour plates in decision 28.
+
+---
+
+## 30. OVERDRIVE scales your fire rate too — and that's a fairness fix, not a buff
+
+**Found by playing**, which is the point of playing: collected a speed boost in sector 2, ran
+straight into a drone, and couldn't shoot it down in time.
+
+**The hole:** decision 28's armour ceiling is evaluated when a drone *spawns*. OVERDRIVE speeds the
+world up *afterwards*, so a drone chosen as fair became unkillable mid-flight. The death traced back
+to a decision made seconds earlier, with nothing on screen to connect the two — the worst kind of
+unfair, because it reads as you being bad.
+
+**The fix:** OVERDRIVE now scales the gun by the same factor as the world. Approach time shrinks by
+1.4×, the shot interval shrinks by 1.4×, so the number of shots you can land is *invariant*. The
+guarantee holds automatically for both spawn-time and mid-flight boosts, rather than needing a
+special case.
+
+The gamble is intact — you still have far less time to read and answer everything — but it can no
+longer hand you a situation no input could survive.
+
+**Generalised:** a guarantee evaluated once at spawn time is only as good as the assumption that
+nothing it depends on can change afterwards. When a powerup can move one of those inputs, either
+re-evaluate or make the quantity invariant. Invariant is better; there's nothing to remember.
+
+---
+
+## 31. The director reserves a gap for pickups
+
+**Also from that same death:** pickups spawn on their own timer, independent of the director, so a
+pickup and a hazard could arrive together. Collecting something that instantly changes how you play,
+while a drone is already on top of you, is not a decision — it's a coin flip.
+
+**First attempt failed instructively.** Requiring clearance on both sides means demanding a window
+twice as wide, and the pacing never produces one: it placed **zero** pickups in three minutes.
+Loosening it wasn't enough either, because the rest between patterns *shrinks* as sectors climb
+(decision 20) — so late in a run no natural gap is ever wide enough and pickups would be silently
+starved out exactly when the run gets interesting.
+
+**The fix:** the director *reserves* the space. A pickup waits only for the trailing side to clear
+naturally, then pushes the next hazard back. Pacing bends slightly around a pickup roughly once
+every ten seconds, rather than pickups being crowded out by their own safety rule.
+
+Pickups also now spawn at the same x as obstacles, so gaps measured in seconds actually line up —
+the two spawn points differed by 4px, which was enough to fail the check by 0.03s.

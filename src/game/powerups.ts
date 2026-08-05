@@ -178,8 +178,9 @@ export class PickupField {
     return out;
   }
 
+  /** Same as the obstacle spawn point, so gaps measured in seconds line up. */
   static get spawnX(): number {
-    return SCREEN.w + 12;
+    return SCREEN.w + 16;
   }
 }
 

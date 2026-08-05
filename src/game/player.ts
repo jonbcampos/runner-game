@@ -16,11 +16,18 @@ export interface PlayerMods {
   jumpApexScale: number;
   /** Scales how long the ascent takes. Below 1 snaps upward faster. */
   jumpRiseScale: number;
+  /** Scales the gap between shots. Below 1 fires faster. */
+  shotCooldownScale: number;
   /** FLIGHT: vertical control replaces the jump arc entirely. */
   flying: boolean;
 }
 
-export const NO_MODS: PlayerMods = { jumpApexScale: 1, jumpRiseScale: 1, flying: false };
+export const NO_MODS: PlayerMods = {
+  jumpApexScale: 1,
+  jumpRiseScale: 1,
+  shotCooldownScale: 1,
+  flying: false,
+};
 
 export interface ShotRequest {
   x: number;
@@ -186,7 +193,7 @@ export class Player {
       if (this.feetY < ceiling) { this.feetY = ceiling; this.vy = 0; }
       if (this.feetY > floor) { this.feetY = floor; this.vy = 0; }
 
-      return this.tryShoot(input);
+      return this.tryShoot(input, mods.shotCooldownScale);
     }
 
     // Leaving flight mid-air: fall normally from wherever you were.
@@ -245,7 +252,7 @@ export class Player {
       this.jumpCut = true;
     }
 
-    const shot = this.tryShoot(input);
+    const shot = this.tryShoot(input, mods.shotCooldownScale);
 
     this.applyGravity(dt);
     this.integrate(dt);
@@ -257,10 +264,10 @@ export class Player {
    * Fire if the button is down and the cooldown has elapsed.
    * A fresh press fires immediately; holding auto-fires at the cooldown rate.
    */
-  private tryShoot(input: Input): ShotRequest | null {
+  private tryShoot(input: Input, cooldownScale = 1): ShotRequest | null {
     const wantsToShoot = input.consume('shoot') || input.down.shoot;
     if (!wantsToShoot || this.shotCooldownTimer > 0) return null;
-    this.shotCooldownTimer = PLAYER.shotCooldown;
+    this.shotCooldownTimer = PLAYER.shotCooldown * cooldownScale;
     return {
       x: PLAYER_X + PLAYER.muzzleX,
       y:
