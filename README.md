@@ -20,6 +20,11 @@ npm install && npm run dev
 Open the printed Network URL on your phone to play it on a real touchscreen. On desktop:
 arrows/WASD/space, `Z` to shoot.
 
+## Why it's built this way
+
+[DECISIONS.md](DECISIONS.md) is the running log of what we decided and why — read that before
+changing anything structural. The short version follows.
+
 ## How it's built
 
 TypeScript and a 2D canvas, no engine, no runtime dependencies. The whole game is ~22 kB built.

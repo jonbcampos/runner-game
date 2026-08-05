@@ -81,6 +81,24 @@ startLoop({
   },
 });
 
+/**
+ * Register the service worker in production only.
+ *
+ * Deliberately not in dev: a caching worker sitting in front of the Vite dev
+ * server intercepts module requests and serves stale code, which produces
+ * "I changed the file and nothing happened" bugs that cost far more time than
+ * the worker saves.
+ */
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // BASE_URL keeps this correct whether the game is served from the domain
+    // root or from a GitHub Pages subpath.
+    void navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+      .catch((error) => console.warn('[sw] registration failed', error));
+  });
+}
+
 // Dev-only handle for poking at a live run from the console. Stripped from
 // production builds by the `import.meta.env.DEV` guard.
 if (import.meta.env.DEV) {
