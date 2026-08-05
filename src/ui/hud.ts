@@ -1,5 +1,6 @@
 import { SCREEN, VIRTUAL_H } from '../game/config';
 import type { GameState } from '../game/state';
+import { POWERUP_DEFS } from '../game/powerups';
 import { PALETTE, alpha } from '../render/palette';
 import { drawText } from './text';
 
@@ -30,8 +31,54 @@ export function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
   });
 
   drawHearts(ctx, state);
+  drawPowerupTimer(ctx, state);
   drawBossBar(ctx, state);
   drawSectorAnnouncement(ctx, state);
+}
+
+/**
+ * The active powerup and its remaining time.
+ *
+ * A draining bar rather than a number, because the only thing you need mid-run
+ * is "how much longer", answered by glance rather than by reading. Risky
+ * powerups are drawn in hazard pink so a bad state is never mistaken for a
+ * good one.
+ */
+function drawPowerupTimer(ctx: CanvasRenderingContext2D, state: GameState): void {
+  if (state.powerupFlash > 0) {
+    const def = POWERUP_DEFS[state.activePowerup ?? 'speed'];
+    const fade = Math.min(1, state.powerupFlash / 0.4);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    drawText(ctx, def.blurb, SCREEN.w / 2, VIRTUAL_H / 2 + 22, {
+      size: 10,
+      color: def.risky ? PALETTE.spike : PALETTE.shot,
+      align: 'center',
+      glow: true,
+    });
+    ctx.restore();
+  }
+
+  if (!state.activePowerup) return;
+  const def = POWERUP_DEFS[state.activePowerup];
+  const colour = def.risky ? PALETTE.spike : PALETTE.shot;
+  const w = 84;
+  const x = SCREEN.w / 2 - w / 2;
+  const y = VIRTUAL_H - 16;
+
+  drawText(ctx, def.label, SCREEN.w / 2, y - 7, { size: 8, color: colour, align: 'center' });
+
+  ctx.fillStyle = alpha(colour, 0.18);
+  ctx.fillRect(x, y, w, 4);
+  const remaining = Math.max(0, state.powerupRemaining / def.duration);
+  ctx.fillStyle = colour;
+  ctx.fillRect(x, y, w * remaining, 4);
+
+  // Flash the bar in the last second, so it running out is never a surprise.
+  if (state.powerupRemaining < 1) {
+    ctx.fillStyle = alpha(PALETTE.playerCore, 0.5 + Math.sin(state.elapsed * 24) * 0.5);
+    ctx.fillRect(x, y, w * remaining, 4);
+  }
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   OBSTACLE,
   PLAYER,
   PLAYER_X,
+  POWERUP,
   SHOT,
   WORLD,
   type Difficulty,
@@ -17,6 +18,7 @@ import { inset, overlaps, type Aabb } from './collision';
 import { Director } from './director';
 import { ObstacleField } from './obstacles';
 import { Player } from './player';
+import { PickupField, POWERUP_DEFS, pickPowerup, pickupY, type PowerupKind } from './powerups';
 import { ShotPool } from './projectiles';
 import { Rng } from '../core/rng';
 import type { Input } from '../core/input';
@@ -36,7 +38,9 @@ export type GameEventType =
   | 'sector'
   | 'boss-arrive'
   | 'boss-hurt'
-  | 'boss-die';
+  | 'boss-die'
+  | 'powerup'
+  | 'powerup-expire';
 
 export interface GameEvent {
   type: GameEventType;
@@ -62,8 +66,10 @@ export class GameState {
   readonly shots = new ShotPool();
   rng = new Rng(1);
 
-  /** Total virtual px travelled this run. */
+  /** Total virtual px travelled this run. Drives the world and parallax. */
   distance = 0;
+  /** Scoring distance. Diverges from `distance` while OVERDRIVE is active. */
+  score = 0;
   scrollSpeed: number = WORLD.baseScrollSpeed;
   sector = 1;
   elapsed = 0;
@@ -92,6 +98,20 @@ export class GameState {
   }));
   private eventCount = 0;
 
+  readonly pickups = new PickupField();
+
+  /**
+   * The one active powerup, or null. Single-slot on purpose: a new pickup
+   * replaces whatever you were holding, which makes even collecting a decision.
+   */
+  activePowerup: PowerupKind | null = null;
+  powerupRemaining = 0;
+  /** Counts down after collecting, driving the on-screen blurb. */
+  powerupFlash = 0;
+
+  private pickupTimer = 0;
+  private skyDroneTimer = 0;
+
   readonly boss = new Boss();
   /** Counts down after a boss dies, driving the victory banner. */
   bossVictoryFlash = 0;
@@ -110,17 +130,32 @@ export class GameState {
   private hurtB: Aabb = { x: 0, y: 0, w: 0, h: 0 };
 
   get metres(): number {
-    return Math.floor(this.distance / PX_PER_METRE);
+    return Math.floor(this.score / PX_PER_METRE);
   }
 
-  /** Current shot reach. A plain getter for now; powerups will scale it. */
   get shotRange(): number {
-    return SHOT.range;
+    return this.activePowerup === 'longShot' ? SHOT.range * POWERUP.rangeScale : SHOT.range;
   }
 
-  /** Damage per shot. Same story — the stronger-gun powerup raises it. */
   get shotDamage(): number {
-    return SHOT.damage;
+    return this.activePowerup === 'power' ? POWERUP.powerDamage : SHOT.damage;
+  }
+
+  get flying(): boolean {
+    return this.activePowerup === 'flight';
+  }
+
+  get invincible(): boolean {
+    return this.activePowerup === 'invincible';
+  }
+
+  /** OVERDRIVE's whole point: the world speeds up AND the score does more. */
+  private get speedMultiplier(): number {
+    return this.activePowerup === 'speed' ? POWERUP.speedScale : 1;
+  }
+
+  private get scoreMultiplier(): number {
+    return this.activePowerup === 'speed' ? POWERUP.speedScoreScale : 1;
   }
 
   private emit(type: GameEventType, x = 0, y = 0): void {
@@ -143,6 +178,7 @@ export class GameState {
     this.rng = new Rng(seed);
     this.phase = 'playing';
     this.distance = 0;
+    this.score = 0;
     this.elapsed = 0;
     this.sector = 1;
     this.scrollSpeed = WORLD.baseScrollSpeed * this.difficulty.speedScale;
@@ -152,6 +188,13 @@ export class GameState {
     this.bossVictoryFlash = 0;
     this.eventCount = 0;
 
+    this.activePowerup = null;
+    this.powerupRemaining = 0;
+    this.powerupFlash = 0;
+    this.pickupTimer = POWERUP.spawnIntervalMin;
+    this.skyDroneTimer = 0;
+
+    this.pickups.reset();
     this.boss.reset();
     this.director.reset(this.difficulty);
     this.player.reset(this.difficulty.hp, this.scrollSpeed);
@@ -177,7 +220,13 @@ export class GameState {
 
     this.updateSpeedAndSector();
 
-    const shot = this.player.update(dt, input, this.scrollSpeed);
+    this.updatePowerup(dt);
+
+    const shot = this.player.update(dt, input, this.scrollSpeed, {
+      jumpApexScale: this.activePowerup === 'highJump' ? POWERUP.jumpApexScale : 1,
+      jumpRiseScale: this.activePowerup === 'highJump' ? POWERUP.jumpRiseScale : 1,
+      flying: this.flying,
+    });
     if (shot && !this.player.dead) {
       this.shots.spawn(shot.x, shot.y);
       this.emit('shoot', shot.x, shot.y);
@@ -187,7 +236,9 @@ export class GameState {
     if (this.player.justLanded) this.emit('land', PLAYER_X + PLAYER.width / 2);
 
     this.distance += this.scrollSpeed * dt;
+    this.score += this.scrollSpeed * dt * this.scoreMultiplier;
     this.obstacles.update(dt, this.scrollSpeed);
+    this.pickups.update(dt, this.scrollSpeed);
     this.shots.update(dt, this.shotRange);
 
     if (this.bossVictoryFlash > 0) this.bossVictoryFlash -= dt;
@@ -195,7 +246,10 @@ export class GameState {
     if (!this.player.dead) {
       this.updateBoss(dt);
       this.updateSpawning(dt);
+      this.updatePickupSpawning(dt);
+      this.updateSkyDrones(dt);
       this.resolveShotHits();
+      this.resolvePickups();
       this.resolvePlayerHits();
     } else if (this.player.feetY > GROUND_Y + 80) {
       // Body has fallen off the bottom of the screen — the run is over.
@@ -219,7 +273,76 @@ export class GameState {
     const target =
       (WORLD.baseScrollSpeed + WORLD.speedPerSector * (this.sector - 1)) *
       this.difficulty.speedScale;
-    this.scrollSpeed = Math.min(target, WORLD.speedCap * this.difficulty.speedScale);
+    this.scrollSpeed =
+      Math.min(target, WORLD.speedCap * this.difficulty.speedScale) * this.speedMultiplier;
+  }
+
+  private updatePowerup(dt: number): void {
+    if (this.powerupFlash > 0) this.powerupFlash -= dt;
+    if (!this.activePowerup) return;
+    this.powerupRemaining -= dt;
+    if (this.powerupRemaining <= 0) {
+      this.emit('powerup-expire');
+      this.activePowerup = null;
+      this.powerupRemaining = 0;
+    }
+  }
+
+  /**
+   * Pickups appear on a timer rather than as part of a pattern, so they never
+   * interfere with the director's spacing guarantee — a pickup is never the
+   * thing standing between you and a hazard you had to react to.
+   */
+  private updatePickupSpawning(dt: number): void {
+    if (!this.directorEnabled || this.boss.blocking) return;
+    this.pickupTimer -= dt;
+    if (this.pickupTimer > 0) return;
+
+    const random = () => this.rng.next();
+    const kind = pickPowerup(random);
+    this.pickups.spawn(kind, PickupField.spawnX, pickupY(kind, random));
+    this.pickupTimer = this.rng.range(POWERUP.spawnIntervalMin, POWERUP.spawnIntervalMax);
+  }
+
+  /**
+   * Sky drones only exist while you're flying.
+   *
+   * Without them FLIGHT would be seven seconds of holding a button above a
+   * game that can't touch you — the most powerful pickup and by far the most
+   * boring. They put the third verb back in the air with you.
+   */
+  private updateSkyDrones(dt: number): void {
+    if (!this.flying || !this.directorEnabled || this.boss.blocking) {
+      this.skyDroneTimer = 0.5;
+      return;
+    }
+    this.skyDroneTimer -= dt;
+    if (this.skyDroneTimer > 0) return;
+    this.skyDroneTimer = POWERUP.skyDroneInterval;
+
+    // Placed near the player's current altitude, so they demand a real read
+    // rather than being avoidable by parking at one height.
+    const spread = this.rng.range(-34, 34);
+    const y = Math.max(
+      GROUND_Y - POWERUP.flightMaxHeight,
+      Math.min(GROUND_Y - POWERUP.flightMinHeight - 18, this.player.feetY - 18 + spread),
+    );
+    this.obstacles.spawn('skydrone', ObstacleField.spawnX, y);
+  }
+
+  private resolvePickups(): void {
+    this.player.bounds(this.boxA);
+    for (const item of this.pickups.items) {
+      if (!item.active) continue;
+      PickupField.box(item, this.boxB);
+      if (!overlaps(this.boxA, this.boxB)) continue;
+
+      item.active = false;
+      this.activePowerup = item.kind;
+      this.powerupRemaining = POWERUP_DEFS[item.kind].duration;
+      this.powerupFlash = 1.6;
+      this.emit('powerup', this.boxB.x, this.boxB.y);
+    }
   }
 
   private isBossSector(sector: number): boolean {
@@ -302,7 +425,7 @@ export class GameState {
   }
 
   private resolvePlayerHits(): void {
-    if (this.player.invulnerable) return;
+    if (this.player.invulnerable || this.invincible) return;
 
     this.player.bounds(this.boxA);
     inset(this.boxA, PLAYER.hurtboxInsetX, PLAYER.hurtboxInsetY, this.hurtA);

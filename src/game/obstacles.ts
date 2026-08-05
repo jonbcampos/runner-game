@@ -2,7 +2,7 @@ import { GROUND_Y, OBSTACLE, SCREEN } from './config';
 import type { Aabb } from './collision';
 
 /** One family per verb. See OBSTACLE in config.ts for why the sizes are what they are. */
-export type ObstacleKind = 'spike' | 'beam' | 'drone';
+export type ObstacleKind = 'spike' | 'beam' | 'drone' | 'skydrone';
 
 export interface Obstacle {
   kind: ObstacleKind;
@@ -25,6 +25,9 @@ export const SOLVED_BY: Record<ObstacleKind, 'jump' | 'slide' | 'shoot'> = {
   spike: 'jump',
   beam: 'slide',
   drone: 'shoot',
+  // Only ever appears while you're flying, where "jump" and "slide" don't
+  // exist as concepts — so shooting is the only answer, by construction.
+  skydrone: 'shoot',
 };
 
 const POOL_SIZE = 24;
@@ -49,7 +52,11 @@ export class ObstacleField {
     }
   }
 
-  spawn(kind: ObstacleKind, x: number): Obstacle | null {
+  /**
+   * @param y Optional altitude override. Only sky drones use it — everything
+   * else derives its height from the ground line.
+   */
+  spawn(kind: ObstacleKind, x: number, y?: number): Obstacle | null {
     const item = this.items.find((o) => !o.active);
     if (!item) return null;
 
@@ -78,6 +85,12 @@ export class ObstacleField {
         item.h = OBSTACLE.drone.height;
         item.y = GROUND_Y - OBSTACLE.drone.bottomGap - item.h;
         item.hp = OBSTACLE.drone.hp;
+        break;
+      case 'skydrone':
+        item.w = OBSTACLE.skydrone.width;
+        item.h = OBSTACLE.skydrone.height;
+        item.y = y ?? GROUND_Y - 100;
+        item.hp = OBSTACLE.skydrone.hp;
         break;
     }
     return item;

@@ -11,6 +11,7 @@ import { Director, minimumGapSeconds } from '../game/director';
 import { ObstacleField, SOLVED_BY, type ObstacleKind } from '../game/obstacles';
 import { Rng } from '../core/rng';
 import { slideDurationAt } from '../game/player';
+import { POWERUP_DEFS, type PowerupKind } from '../game/powerups';
 import { GameState } from '../game/state';
 import type { Action } from '../core/input';
 
@@ -80,11 +81,16 @@ function trial(
   kind: ObstacleKind,
   verb: Action | 'nothing',
   difficulty: DifficultyId = 'normal',
+  powerup: PowerupKind | null = null,
 ): boolean {
   const state = new GameState();
   const input = new FakeInput();
   // Director off: the only hazard is the one placed below.
   state.start(difficulty, 1, false);
+  if (powerup) {
+    state.activePowerup = powerup;
+    state.powerupRemaining = 999;
+  }
   const startingHp = state.player.hp;
 
   const obstacle = state.obstacles.spawn(kind, ObstacleField.spawnX);
@@ -101,8 +107,13 @@ function trial(
 
     // Deliberately imprecise: commit ~0.2s out rather than frame-perfectly, so
     // a mechanic that only works on a pixel-tight window still reads as broken.
+    // Tall obstacles get an earlier commit, because that's what a person does —
+    // you start a big jump sooner than a hop.
+    const commitAt = obstacle.h > 30 ? 0.34 : 0.2;
     if (verb === 'jump') {
-      if (timeToImpact < 0.2 && timeToImpact > -0.05 && state.player.grounded) input.press('jump');
+      if (timeToImpact < commitAt && timeToImpact > -0.05 && state.player.grounded) {
+        input.press('jump');
+      }
       if (timeToImpact < -0.1) input.release('jump');
     } else if (verb === 'slide') {
       // Slide is hold-to-continue, so this holds from ~0.2s out until the
@@ -314,6 +325,81 @@ function trialShotRange(): { maxTravel: number; range: number; ok: boolean } {
   return { maxTravel, range: state.shotRange, ok: maxTravel <= state.shotRange && maxTravel > state.shotRange - step * 2 };
 }
 
+/**
+ * Every powerup must measurably do the thing it claims.
+ *
+ * The failure mode here is silence: a powerup that's wired up but has no effect
+ * looks completely normal — you collect it, the HUD shows a timer, and nothing
+ * happens. So each one is asserted against an observable quantity rather than
+ * against "did the state field get set".
+ */
+function trialPowerups(): { kind: PowerupKind; effect: string; ok: boolean }[] {
+  const out: { kind: PowerupKind; effect: string; ok: boolean }[] = [];
+
+  const withPowerup = (kind: PowerupKind | null): GameState => {
+    const state = new GameState();
+    state.start('normal', 1, false);
+    if (kind) {
+      state.activePowerup = kind;
+      state.powerupRemaining = POWERUP_DEFS[kind].duration;
+    }
+    return state;
+  };
+
+  const base = withPowerup(null);
+
+  const longShot = withPowerup('longShot');
+  out.push({ kind: 'longShot', effect: `range ${base.shotRange} -> ${longShot.shotRange}`,
+    ok: longShot.shotRange > base.shotRange });
+
+  const power = withPowerup('power');
+  out.push({ kind: 'power', effect: `damage ${base.shotDamage} -> ${power.shotDamage}`,
+    ok: power.shotDamage > base.shotDamage });
+
+  // Speed has to move BOTH the world and the score, or it isn't a gamble.
+  const speed = withPowerup('speed');
+  const input = new FakeInput();
+  for (let i = 0; i < 120; i++) speed.update(FIXED_DT, input as never);
+  const plain = withPowerup(null);
+  for (let i = 0; i < 120; i++) plain.update(FIXED_DT, input as never);
+  const fasterWorld = speed.scrollSpeed > plain.scrollSpeed;
+  const betterScore = speed.metres > plain.metres;
+  out.push({ kind: 'speed',
+    effect: `speed ${Math.round(plain.scrollSpeed)}->${Math.round(speed.scrollSpeed)}, score ${plain.metres}->${speed.metres}`,
+    ok: fasterWorld && betterScore });
+
+  // High jump must clear a beam — the thing no ordinary jump can do.
+  const highJumpClears = trial('beam', 'jump', 'normal', 'highJump');
+  const normalJumpFails = !trial('beam', 'jump', 'normal', null);
+  out.push({ kind: 'highJump', effect: 'clears a beam that a normal jump cannot',
+    ok: highJumpClears && normalJumpFails });
+
+  // Invincibility must survive the one thing nothing else survives: standing
+  // still in front of a spike.
+  const invincibleSurvives = trial('spike', 'nothing', 'normal', 'invincible');
+  out.push({ kind: 'invincible', effect: 'survives an unavoided spike', ok: invincibleSurvives });
+
+  // Flight: climbs while JUMP is held, and sky drones appear to meet you.
+  const fly = withPowerup('flight');
+  fly.start('normal', 1, true);
+  fly.activePowerup = 'flight';
+  fly.powerupRemaining = 99;
+  const flyInput = new FakeInput();
+  flyInput.press('jump');
+  const startY = fly.player.feetY;
+  let sawSkyDrone = false;
+  for (let i = 0; i < 120 * 4; i++) {
+    fly.player.hp = 99;
+    fly.update(FIXED_DT, flyInput as never);
+    if (fly.obstacles.items.some((o) => o.active && o.kind === 'skydrone')) sawSkyDrone = true;
+  }
+  const climbed = fly.player.feetY < startY - 20;
+  out.push({ kind: 'flight', effect: `climbed ${Math.round(startY - fly.player.feetY)}px, sky drones: ${sawSkyDrone}`,
+    ok: climbed && sawSkyDrone });
+
+  return out;
+}
+
 export function verify(): TrialResult[] {
   const kinds: ObstacleKind[] = ['spike', 'beam', 'drone'];
   const verbs: (Action | 'nothing')[] = ['jump', 'slide', 'shoot', 'nothing'];
@@ -389,6 +475,16 @@ export function verify(): TrialResult[] {
   results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
     survived: shuttered, expected: true, pass: shuttered });
   if (!shuttered) console.error('[verify] boss takes damage while shuttered');
+
+  for (const row of trialPowerups()) {
+    results.push({ difficulty: 'normal', kind: 'drone', verb: 'shoot',
+      survived: row.ok, expected: true, pass: row.ok });
+    console.log(
+      row.ok
+        ? `[verify] powerup ${row.kind}: ${row.effect}`
+        : `[verify] powerup ${row.kind} HAS NO EFFECT — ${row.effect}`,
+    );
+  }
 
   const slide = trialSlideHold();
   for (const [name, ok] of Object.entries(slide)) {

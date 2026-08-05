@@ -50,6 +50,8 @@ function recoverySeconds(kind: ObstacleKind, scrollSpeed: number): number {
     case 'drone':
       // Long enough to land every shot the drone takes to kill.
       return OBSTACLE.drone.hp * PLAYER.shotCooldown;
+    case 'skydrone':
+      return OBSTACLE.skydrone.hp * PLAYER.shotCooldown;
   }
 }
 

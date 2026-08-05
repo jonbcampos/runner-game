@@ -326,3 +326,93 @@ module would quietly couple them.
 
 Slots are pre-allocated and reused, so a busy frame allocates nothing (decision 11's reasoning about
 GC hitches applies here too).
+
+---
+
+## 23. Shots have limited range
+
+**Decided:** Shots fizzle after ~230px, about half the design width. Range and damage are stats, not
+constants, so powerups can change them.
+
+**Why:** An unlimited gun made shooting a non-decision. You held the button the moment a drone
+appeared and it died somewhere off in the distance — no timing, no read, nothing to get better at.
+The other two verbs are timing problems; this makes the third one match. You have to let the target
+come to you.
+
+It also creates the space for LONG SHOT to be a genuine upgrade rather than a cosmetic one, and it's
+what makes the boss fight work at all (decision 24).
+
+---
+
+## 24. The boss adds no fourth verb
+
+**Decided:** The boss launches ordinary spikes, beams and drones from range, then closes in,
+descends, and opens its core — which is the only window in which it can be damaged. Sector 3, then
+every 2 sectors.
+
+**Why:** A boss that needed a new input would turn the whole rest of the game into a tutorial for
+one encounter. Fighting with the existing vocabulary means everything you've learned transfers, and
+the boss is a *test* of that vocabulary rather than a detour from it.
+
+The approach-and-open loop is what makes it a boss rather than a dense patch of track, and it only
+works because of decision 23: since shots don't reach across the screen, the boss coming to you is
+the only chance you get. The two decisions justify each other.
+
+**Boss hazards go through the same spacing floor as the director's**, so even a boss can't emit an
+unsurvivable gap.
+
+**Two bugs worth remembering**, both found by tests and neither visible while playing:
+- The boss originally hovered 96px up while the gun fires from ~15px, so every shot sailed
+  underneath and the fight was silently unwinnable — nothing errored, the health bar just never
+  moved. It now descends to meet you, which is better choreography anyway.
+- The first boss test sampled vulnerability *before* `update()`, but the boss can open and take a
+  legal hit within the same tick, so it reported phantom violations. The lesson: when a test samples
+  state around a mutation, check the invariant directly instead.
+
+---
+
+## 25. A powerup must be a decision, not a gift
+
+**Decided:** Six timed powerups, one active at a time — a new pickup replaces whatever you're
+holding. OVERDRIVE (faster world, much faster scoring), HIGH JUMP, FLIGHT, INVINCIBLE, HEAVY SHOT,
+LONG SHOT.
+
+**Why:** A pickup that is simply good is a reflex, not a choice — you grab it without thinking and
+the moment is uninteresting. So each one either costs something, changes how you have to play, or is
+an outright gamble.
+
+**OVERDRIVE is the interesting one.** It speeds the world up (harder) *and* multiplies scoring
+(better). Worth taking when you're comfortable, worth dodging at 1 HP. It's the only pickup whose
+correct answer depends on how the run is going, and risky pickups spawn low in the running lane so
+declining one costs a real input rather than being the default.
+
+**Single-slot is what makes collection itself a decision:** grabbing a long shot while you're
+mid-flight throws the flight away.
+
+---
+
+## 26. FLIGHT spawns sky drones
+
+**Decided:** Hold JUMP to climb, release to sink, within a clamped altitude band. While it's active,
+sky drones spawn at roughly your altitude.
+
+**Why:** Without them, flight is seven seconds of holding a button above a game that cannot touch
+you — the most powerful pickup and by far the most boring. Sky drones put the third verb back in the
+air with you, so flight changes *what* you're doing rather than removing the need to do anything.
+
+Reusing JUMP for climb was deliberate: it's the button already associated with "up", and inventing a
+control that exists for seven seconds a run is a bad trade.
+
+---
+
+## 27. HIGH JUMP rises faster, not just higher
+
+**Decided:** 1.9× apex *and* a 0.7× rise time.
+
+**Why:** Scaling only the height meant you were still low when the obstacle arrived, so you had to
+re-learn your timing to use the reward — a strange thing to ask of a powerup. Snapping upward faster
+keeps roughly the timing you already have and lets the extra height do the work.
+
+Caught by the test asserting HIGH JUMP clears a beam (76px top) while a normal jump (66px apex)
+cannot. The first version passed the "is it taller" check and still failed the real one, which is
+exactly why the tests assert observable outcomes rather than that a field got set.

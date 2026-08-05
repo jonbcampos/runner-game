@@ -129,6 +129,13 @@ function presentEvent(event: GameEvent): void {
       audio.play('kill');
       particles.shotImpact(event.x, event.y, random);
       break;
+    case 'powerup':
+      audio.play('sector');
+      particles.droneDeath(event.x, event.y, random);
+      break;
+    case 'powerup-expire':
+      audio.play('select');
+      break;
     case 'boss-die':
       audio.play('death');
       particles.droneDeath(event.x, event.y, random);

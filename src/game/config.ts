@@ -285,6 +285,13 @@ export const OBSTACLE = {
     hp: 2,
   },
 
+  /**
+   * Only spawns while FLIGHT is active. Small, fragile, and placed at whatever
+   * altitude you're flying at — the thing that stops flight from being a
+   * do-nothing power. One shot each, because you're also steering.
+   */
+  skydrone: { width: 20, height: 18, hp: 1 },
+
   /** Hazard hurtboxes are inset too — same fairness reason as the player's. */
   hurtboxInset: 2,
 } as const;
@@ -337,6 +344,58 @@ export const BOSS = {
 
   /** Healed on victory, capped at the run's max. */
   healOnDefeat: 1,
+} as const;
+
+// --- Powerups ---------------------------------------------------------------
+
+export const POWERUP = {
+  size: 14,
+  /** Vertical bob, so pickups read as collectible items rather than hazards. */
+  bobAmplitude: 3,
+
+  /** Seconds between pickup spawns. The director places them between patterns. */
+  spawnIntervalMin: 9,
+  spawnIntervalMax: 15,
+
+  // --- Effect magnitudes ---
+  /** OVERDRIVE: the gamble. Faster world, but score accrues much faster too. */
+  speedScale: 1.4,
+  speedScoreScale: 1.9,
+
+  /**
+   * HIGH JUMP: tall enough to clear a beam, which nothing else can do.
+   *
+   * A beam's top edge sits 76px above the ground against a normal 66px apex, so
+   * the boost has to comfortably exceed that — barely clearing it would make the
+   * powerup a coin flip rather than the promise its name makes.
+   */
+  jumpApexScale: 1.9,
+
+  /**
+   * ...and the ascent is quicker, not just taller.
+   *
+   * Scaling height alone means you're still low when the obstacle arrives, so
+   * you'd have to re-learn your timing to use the powerup — which is a strange
+   * thing to ask of a reward. Snapping upward faster keeps roughly the timing
+   * you already have and lets the extra height do the work.
+   */
+  jumpRiseScale: 0.7,
+
+  /** HEAVY SHOT: one-shot kills. */
+  powerDamage: 2,
+
+  /** LONG SHOT: reach, which matters a lot now that range is capped. */
+  rangeScale: 2.3,
+
+  // --- Flight ---
+  /** Upward speed while JUMP is held, and the sink rate when it isn't. */
+  flightClimbSpeed: 150,
+  flightSinkSpeed: 110,
+  /** Altitude band, as heights above the ground line. */
+  flightMinHeight: 26,
+  flightMaxHeight: 150,
+  /** Seconds between sky drones while flying. Flight must not be a free ride. */
+  skyDroneInterval: 1.35,
 } as const;
 
 // --- Difficulty -------------------------------------------------------------

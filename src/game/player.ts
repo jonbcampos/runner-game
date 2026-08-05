@@ -1,8 +1,26 @@
-import { GROUND_Y, PLAYER, PLAYER_X, jumpAirtimeAt } from './config';
+import { GROUND_Y, PLAYER, PLAYER_X, POWERUP, jumpAirtimeAt } from './config';
 import type { Aabb } from './collision';
 import type { Input } from '../core/input';
 
-export type PlayerPose = 'run' | 'air' | 'slide' | 'dead';
+export type PlayerPose = 'run' | 'air' | 'slide' | 'fly' | 'dead';
+
+/**
+ * Powerup-driven modifiers, passed in each tick.
+ *
+ * The player doesn't own or know about powerups — it's told what its body can
+ * currently do. That keeps the state machine readable and means a new powerup
+ * is a new field here rather than new branches scattered through the physics.
+ */
+export interface PlayerMods {
+  /** Multiplies jump apex. HIGH JUMP raises it. */
+  jumpApexScale: number;
+  /** Scales how long the ascent takes. Below 1 snaps upward faster. */
+  jumpRiseScale: number;
+  /** FLIGHT: vertical control replaces the jump arc entirely. */
+  flying: boolean;
+}
+
+export const NO_MODS: PlayerMods = { jumpApexScale: 1, jumpRiseScale: 1, flying: false };
 
 export interface ShotRequest {
   x: number;
@@ -25,19 +43,22 @@ export function slideDurationAt(scrollSpeed: number): number {
  * straight out: apex = v0 * riseTime / 2, and g = v0 / riseTime. Rise and fall
  * get separate gravities so the descent can be faster than the ascent.
  */
-export function solveJumpArc(scrollSpeed: number): {
-  velocity: number;
-  gravityUp: number;
-  gravityDown: number;
-} {
-  const airtime = jumpAirtimeAt(scrollSpeed);
-  const riseTime = airtime * PLAYER.jumpRiseFraction;
+export function solveJumpArc(
+  scrollSpeed: number,
+  apexScale = 1,
+  riseScale = 1,
+): { velocity: number; gravityUp: number; gravityDown: number } {
+  const apex = PLAYER.jumpApex * apexScale;
+  // Airtime grows with the square root of height, not linearly — a taller jump
+  // that kept the same airtime would need violent gravity and feel wrong.
+  const airtime = jumpAirtimeAt(scrollSpeed) * Math.sqrt(apexScale);
+  const riseTime = airtime * PLAYER.jumpRiseFraction * riseScale;
   const fallTime = airtime - riseTime;
-  const velocity = (2 * PLAYER.jumpApex) / riseTime;
+  const velocity = (2 * apex) / riseTime;
   return {
     velocity,
     gravityUp: velocity / riseTime,
-    gravityDown: (2 * PLAYER.jumpApex) / (fallTime * fallTime),
+    gravityDown: (2 * apex) / (fallTime * fallTime),
   };
 }
 
@@ -127,7 +148,12 @@ export class Player {
    * The player doesn't own the projectile pool — it just reports intent, which
    * keeps this file free of any dependency on the rest of the world.
    */
-  update(dt: number, input: Input, scrollSpeed: number): ShotRequest | null {
+  update(
+    dt: number,
+    input: Input,
+    scrollSpeed: number,
+    mods: PlayerMods = NO_MODS,
+  ): ShotRequest | null {
     this.prevFeetY = this.feetY;
     this.justJumped = false;
     this.justSlid = false;
@@ -140,6 +166,31 @@ export class Player {
     }
 
     this.tickTimers(dt);
+
+    // --- Flight --------------------------------------------------------
+    // Replaces the whole ground state machine rather than layering on top of
+    // it. Hold JUMP to climb, release to sink, clamped to an altitude band —
+    // reusing the button the player already associates with "up" instead of
+    // inventing a control that only exists for seven seconds.
+    if (mods.flying) {
+      this.slideTimer = 0;
+      this.slideHoldFloor = 0;
+      this.grounded = false;
+      this.pose = 'fly';
+      input.consume('jump');
+
+      this.vy = input.down.jump ? -POWERUP.flightClimbSpeed : POWERUP.flightSinkSpeed;
+      this.feetY += this.vy * dt;
+      const ceiling = GROUND_Y - POWERUP.flightMaxHeight;
+      const floor = GROUND_Y - POWERUP.flightMinHeight;
+      if (this.feetY < ceiling) { this.feetY = ceiling; this.vy = 0; }
+      if (this.feetY > floor) { this.feetY = floor; this.vy = 0; }
+
+      return this.tryShoot(input);
+    }
+
+    // Leaving flight mid-air: fall normally from wherever you were.
+    if (this.pose === 'fly') this.pose = 'air';
 
     // --- Slide ---------------------------------------------------------
     // Slide is ground-only. A slide pressed in mid-air stays in the input
@@ -172,7 +223,7 @@ export class Player {
     if (canJump && input.consume('jump')) {
       // Solve the arc for the speed the world is moving at right now, so this
       // jump covers the same ground it would at any other speed.
-      const arc = solveJumpArc(scrollSpeed);
+      const arc = solveJumpArc(scrollSpeed, mods.jumpApexScale, mods.jumpRiseScale);
       this.gravityUp = arc.gravityUp;
       this.gravityDown = arc.gravityDown;
       this.vy = -arc.velocity;
@@ -194,25 +245,29 @@ export class Player {
       this.jumpCut = true;
     }
 
-    // --- Shoot ---------------------------------------------------------
-    // A fresh press fires immediately; holding auto-fires at the cooldown rate.
-    let shot: ShotRequest | null = null;
-    const wantsToShoot = input.consume('shoot') || input.down.shoot;
-    if (wantsToShoot && this.shotCooldownTimer <= 0) {
-      this.shotCooldownTimer = PLAYER.shotCooldown;
-      shot = {
-        x: PLAYER_X + PLAYER.muzzleX,
-        y:
-          this.feetY -
-          (this.sliding ? PLAYER.slideHeight : PLAYER.height) +
-          (this.sliding ? PLAYER.muzzleYSlide : PLAYER.muzzleYStand),
-      };
-    }
+    const shot = this.tryShoot(input);
 
     this.applyGravity(dt);
     this.integrate(dt);
     this.updatePose();
     return shot;
+  }
+
+  /**
+   * Fire if the button is down and the cooldown has elapsed.
+   * A fresh press fires immediately; holding auto-fires at the cooldown rate.
+   */
+  private tryShoot(input: Input): ShotRequest | null {
+    const wantsToShoot = input.consume('shoot') || input.down.shoot;
+    if (!wantsToShoot || this.shotCooldownTimer > 0) return null;
+    this.shotCooldownTimer = PLAYER.shotCooldown;
+    return {
+      x: PLAYER_X + PLAYER.muzzleX,
+      y:
+        this.feetY -
+        (this.sliding ? PLAYER.slideHeight : PLAYER.height) +
+        (this.sliding ? PLAYER.muzzleYSlide : PLAYER.muzzleYStand),
+    };
   }
 
   /** Stand back up and start the re-slide cooldown. */

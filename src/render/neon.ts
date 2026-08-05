@@ -1,4 +1,5 @@
-import { GROUND_Y, OBSTACLE, SHOT, VIRTUAL_H, SCREEN } from '../game/config';
+import { GROUND_Y, OBSTACLE, POWERUP, SHOT, VIRTUAL_H, SCREEN } from '../game/config';
+import { POWERUP_DEFS } from '../game/powerups';
 import type { Aabb } from '../game/collision';
 import type { Obstacle } from '../game/obstacles';
 import type { GameState } from '../game/state';
@@ -6,6 +7,7 @@ import type { Renderer } from './renderer';
 import { drawBackground } from './parallax';
 import { PALETTE, alpha } from './palette';
 import { drawHud } from '../ui/hud';
+import { drawText } from '../ui/text';
 import { drawScreens } from '../ui/screens';
 import { drawTouchpad } from '../ui/touchpad';
 
@@ -25,6 +27,7 @@ export const neonRenderer: Renderer = {
     drawBackground(ctx, state.distance);
     drawBoss(ctx, state, interpolation);
     drawObstacles(ctx, state, interpolation);
+    drawPickups(ctx, state, interpolation);
     drawShots(ctx, state, interpolation);
     drawPlayer(ctx, state, interpolation);
     particles.draw(ctx);
@@ -73,6 +76,26 @@ function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState, interpolati
     glowRect(ctx, -w / 2, -h / 2, w, h, PALETTE.spike);
     ctx.restore();
     return;
+  }
+
+  // Invincibility reads as a hard shell rather than as flicker, so it can't be
+  // confused with the post-hit i-frame blink.
+  if (state.invincible) {
+    const pulse = 0.5 + Math.sin(state.elapsed * 14) * 0.3;
+    ctx.fillStyle = alpha(PALETTE.shot, 0.25 * pulse);
+    ctx.fillRect(x - 7, y - 7, w + 14, h + 14);
+    ctx.strokeStyle = alpha(PALETTE.shot, pulse);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 5.5, y - 5.5, w + 11, h + 11);
+  }
+
+  // Flight thruster, pointing down so the lift is legible.
+  if (player.pose === 'fly') {
+    const flare = 6 + Math.sin(state.elapsed * 30) * 3;
+    ctx.fillStyle = alpha(PALETTE.shot, 0.55);
+    ctx.fillRect(x + 3, y + h, w - 6, flare);
+    ctx.fillStyle = alpha(PALETTE.shot, 0.2);
+    ctx.fillRect(x + 1, y + h, w - 2, flare + 5);
   }
 
   // Motion streak behind the player — strongest while sliding, which is when
@@ -141,6 +164,9 @@ function drawObstacles(
         break;
       case 'drone':
         drawDrone(ctx, x, item, state.elapsed);
+        break;
+      case 'skydrone':
+        drawSkyDrone(ctx, x, item, state.elapsed);
         break;
     }
   }
@@ -228,6 +254,66 @@ function drawDrone(ctx: CanvasRenderingContext2D, x: number, item: Obstacle, tim
   ctx.fillStyle = flashing ? PALETTE.playerCore : PALETTE.shot;
   ctx.fillRect(x + 5, item.y + 9, Math.max(2, (item.w - 10) * (item.hp / OBSTACLE.drone.hp)), 4);
 }
+
+/** Small fast drone that only exists while you're flying. */
+function drawSkyDrone(ctx: CanvasRenderingContext2D, x: number, item: Obstacle, time: number): void {
+  const flashing = item.hitFlash > 0;
+  glowRect(ctx, x, item.y, item.w, item.h, flashing ? PALETTE.playerCore : PALETTE.drone);
+  ctx.fillStyle = PALETTE.skyTop;
+  ctx.fillRect(x + 3, item.y + 5, item.w - 6, 6);
+  ctx.fillStyle = flashing ? PALETTE.playerCore : PALETTE.shot;
+  ctx.fillRect(x + 4, item.y + 6, item.w - 8, 4);
+  // Rotor blur above, so it reads as airborne rather than as a floating block.
+  ctx.fillStyle = alpha(PALETTE.droneShield, 0.35 + Math.sin(time * 30) * 0.2);
+  ctx.fillRect(x - 3, item.y - 3, item.w + 6, 2);
+}
+
+/**
+ * Pickups. Bobbing, haloed, and colour-coded by whether they help you: the
+ * risky one is drawn in hazard pink so the decision is legible at speed.
+ */
+function drawPickups(ctx: CanvasRenderingContext2D, state: GameState, interpolation: number): void {
+  for (const item of state.pickups.items) {
+    if (!item.active) continue;
+    const def = POWERUP_DEFS[item.kind];
+    const x = item.prevX + (item.x - item.prevX) * interpolation;
+    const y = item.y + Math.sin(item.phase * 3) * POWERUP.bobAmplitude;
+    const size = POWERUP.size;
+    const colour = def.risky ? PALETTE.spike : PALETTE.shot;
+    const pulse = 0.6 + Math.sin(item.phase * 6) * 0.25;
+
+    ctx.fillStyle = alpha(colour, 0.16 * pulse);
+    ctx.fillRect(x - 7, y - 7, size + 14, size + 14);
+    ctx.fillStyle = alpha(colour, 0.34 * pulse);
+    ctx.fillRect(x - 3, y - 3, size + 6, size + 6);
+
+    // Diamond body, so pickups never read as one of the three hazards.
+    ctx.save();
+    ctx.translate(x + size / 2, y + size / 2);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = colour;
+    ctx.fillRect(-size / 2.6, -size / 2.6, size / 1.3, size / 1.3);
+    ctx.fillStyle = PALETTE.playerCore;
+    ctx.fillRect(-size / 5, -size / 5, size / 2.5, size / 2.5);
+    ctx.restore();
+
+    drawText(ctx, POWERUP_GLYPH[item.kind], x + size / 2, y + size / 2 + 1, {
+      size: 7,
+      color: PALETTE.skyTop,
+      align: 'center',
+    });
+  }
+}
+
+/** One character per powerup, readable at 7px. */
+const POWERUP_GLYPH: Record<string, string> = {
+  speed: '!',
+  highJump: 'J',
+  flight: 'F',
+  invincible: 'I',
+  power: 'P',
+  longShot: 'L',
+};
 
 function drawDeath(ctx: CanvasRenderingContext2D, item: Obstacle, x: number): void {
   // deathTimer counts down from 0.18, so this goes 0 -> 1 over the animation.
