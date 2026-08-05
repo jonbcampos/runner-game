@@ -5,12 +5,15 @@ import {
   JUMP_APEX_HEIGHT,
   OBSTACLE,
   PLAYER,
+  PLAYER_X,
+  SHOT,
   WORLD,
   type Difficulty,
   type DifficultyId,
 } from './config';
 import { inset, overlaps, type Aabb } from './collision';
-import { ObstacleField, type ObstacleKind } from './obstacles';
+import { Director } from './director';
+import { ObstacleField } from './obstacles';
 import { Player } from './player';
 import { ShotPool } from './projectiles';
 import { Rng } from '../core/rng';
@@ -18,38 +21,32 @@ import type { Input } from '../core/input';
 
 export type Phase = 'title' | 'playing' | 'gameover';
 
-/** Virtual pixels per displayed "meter". Purely cosmetic scoring scale. */
-const PX_PER_METRE = 8;
+export type GameEventType =
+  | 'jump'
+  | 'shoot'
+  /** A shot connected but didn't destroy the target. */
+  | 'shoot-impact'
+  | 'slide'
+  | 'land'
+  | 'hit'
+  | 'kill'
+  | 'death'
+  | 'sector';
 
-/**
- * M1 obstacle script: a fixed, hand-placed rotation that shows every family and
- * every two-verb pairing. It is deliberately not random — the point of M1 is to
- * answer "does this feel good", and that question needs a repeatable sequence.
- * The M3 director replaces this with an authored pattern library.
- *
- * `gap` is the pause in *seconds* before the next obstacle, never pixels. Since
- * hazards travel at the scroll speed, a seconds-based gap means the player's
- * reaction time is constant as the game speeds up — the distance stretches, the
- * difficulty doesn't secretly spike.
- */
-export interface ScriptBeat {
-  kind: ObstacleKind;
-  gap: number;
+export interface GameEvent {
+  type: GameEventType;
+  x: number;
+  y: number;
 }
 
-const M1_SCRIPT: readonly ScriptBeat[] = [
-  { kind: 'spike', gap: 2.0 },
-  { kind: 'beam', gap: 2.0 },
-  { kind: 'drone', gap: 2.2 },
-  { kind: 'spike', gap: 0.9 },
-  { kind: 'spike', gap: 2.0 },
-  { kind: 'beam', gap: 1.8 },
-  { kind: 'drone', gap: 1.0 },
-  { kind: 'beam', gap: 2.2 },
-  { kind: 'drone', gap: 2.0 },
-  { kind: 'spike', gap: 1.0 },
-  { kind: 'beam', gap: 2.4 },
-];
+/**
+ * Cap on events per tick. Far more than can actually occur, and a hard bound
+ * beats an unbounded array that quietly grows.
+ */
+const MAX_EVENTS = 16;
+
+/** Virtual pixels per displayed "meter". Purely cosmetic scoring scale. */
+const PX_PER_METRE = 8;
 
 export class GameState {
   phase: Phase = 'title';
@@ -72,14 +69,30 @@ export class GameState {
   hitstop = 0;
   shake = 0;
 
-  private scriptIndex = 0;
-  private spawnTimer = 0;
+  /** Counts down after a sector change, driving the on-screen announcement. */
+  sectorFlash = 0;
+
   /**
-   * The obstacle script for this run. Injectable so the contract tests can run
-   * a run with a single hand-placed hazard and nothing else, and so the M3
-   * director can slot in here without changing GameState.
+   * Things that happened this tick, for sound and particles to react to.
+   *
+   * An event queue rather than direct calls, because `src/game/` must not know
+   * that renderers or speakers exist — the same separation that keeps the
+   * planned pixel-art renderer a drop-in. Slots are pre-allocated and reused,
+   * so a busy frame costs no garbage.
    */
-  private script: readonly ScriptBeat[] = M1_SCRIPT;
+  private readonly eventPool: GameEvent[] = Array.from({ length: MAX_EVENTS }, () => ({
+    type: 'jump' as GameEventType,
+    x: 0,
+    y: 0,
+  }));
+  private eventCount = 0;
+
+  readonly director = new Director();
+  /**
+   * Whether the director is spawning. Off for the contract tests, which place a
+   * single hazard by hand and need nothing else on the track.
+   */
+  private directorEnabled = true;
 
   /** Scratch boxes, reused every tick so collision allocates nothing. */
   private boxA: Aabb = { x: 0, y: 0, w: 0, h: 0 };
@@ -91,9 +104,23 @@ export class GameState {
     return Math.floor(this.distance / PX_PER_METRE);
   }
 
-  start(difficultyId: DifficultyId, seed: number, script: readonly ScriptBeat[] = M1_SCRIPT): void {
+  private emit(type: GameEventType, x = 0, y = 0): void {
+    if (this.eventCount >= MAX_EVENTS) return;
+    const event = this.eventPool[this.eventCount++]!;
+    event.type = type;
+    event.x = x;
+    event.y = y;
+  }
+
+  /** Hand this tick's events to a consumer, then clear them. */
+  drainEvents(consume: (event: GameEvent) => void): void {
+    for (let i = 0; i < this.eventCount; i++) consume(this.eventPool[i]!);
+    this.eventCount = 0;
+  }
+
+  start(difficultyId: DifficultyId, seed: number, directorEnabled = true): void {
     this.difficulty = DIFFICULTIES[difficultyId];
-    this.script = script;
+    this.directorEnabled = directorEnabled;
     this.rng = new Rng(seed);
     this.phase = 'playing';
     this.distance = 0;
@@ -102,11 +129,10 @@ export class GameState {
     this.scrollSpeed = WORLD.baseScrollSpeed * this.difficulty.speedScale;
     this.hitstop = 0;
     this.shake = 0;
-    this.scriptIndex = 0;
-    // A beat of empty track before the first hazard, so the run doesn't open
-    // with a reaction test before the player's thumbs are even down.
-    this.spawnTimer = 1.4 * this.difficulty.spacingScale;
+    this.sectorFlash = 0;
+    this.eventCount = 0;
 
+    this.director.reset(this.difficulty);
     this.player.reset(this.difficulty.hp, this.scrollSpeed);
     this.obstacles.reset();
     this.shots.reset();
@@ -126,11 +152,18 @@ export class GameState {
     input.tick(dt);
     this.elapsed += dt;
     this.decayShake(dt);
+    if (this.sectorFlash > 0) this.sectorFlash -= dt;
 
     this.updateSpeedAndSector();
 
     const shot = this.player.update(dt, input, this.scrollSpeed);
-    if (shot && !this.player.dead) this.shots.spawn(shot.x, shot.y);
+    if (shot && !this.player.dead) {
+      this.shots.spawn(shot.x, shot.y);
+      this.emit('shoot', shot.x, shot.y);
+    }
+    if (this.player.justJumped) this.emit('jump');
+    if (this.player.justSlid) this.emit('slide');
+    if (this.player.justLanded) this.emit('land', PLAYER_X + PLAYER.width / 2);
 
     this.distance += this.scrollSpeed * dt;
     this.obstacles.update(dt, this.scrollSpeed);
@@ -147,7 +180,14 @@ export class GameState {
   }
 
   private updateSpeedAndSector(): void {
-    this.sector = Math.floor(this.elapsed / WORLD.sectorLength) + 1;
+    const sector = Math.floor(this.elapsed / WORLD.sectorLength) + 1;
+    if (sector !== this.sector) {
+      // Escalation you can see and hear, not just feel. Without a marker the
+      // game gets harder for reasons the player can't name.
+      this.sectorFlash = 1.8;
+      this.emit('sector');
+    }
+    this.sector = sector;
     const target =
       (WORLD.baseScrollSpeed + WORLD.speedPerSector * (this.sector - 1)) *
       this.difficulty.speedScale;
@@ -155,14 +195,17 @@ export class GameState {
   }
 
   private updateSpawning(dt: number): void {
-    if (this.script.length === 0) return;
-    this.spawnTimer -= dt;
-    if (this.spawnTimer > 0) return;
-
-    const beat = this.script[this.scriptIndex % this.script.length]!;
-    this.obstacles.spawn(beat.kind, ObstacleField.spawnX);
-    this.scriptIndex++;
-    this.spawnTimer = beat.gap * this.difficulty.spacingScale;
+    if (!this.directorEnabled) return;
+    this.director.update(
+      dt,
+      {
+        difficulty: this.difficulty,
+        sector: this.sector,
+        scrollSpeed: this.scrollSpeed,
+        rng: this.rng,
+      },
+      (kind) => this.obstacles.spawn(kind, ObstacleField.spawnX),
+    );
   }
 
   private resolveShotHits(): void {
@@ -181,10 +224,12 @@ export class GameState {
         shot.active = false;
         item.hp -= 1;
         item.hitFlash = 0.08;
+        this.emit('shoot-impact', shot.x, shot.y + SHOT.height / 2);
         if (item.hp <= 0) {
           this.obstacles.kill(item);
           this.hitstop = Math.max(this.hitstop, JUICE.killHitstopDuration);
           this.shake = Math.max(this.shake, JUICE.shakeOnKill);
+          this.emit('kill', item.x + item.w / 2, item.y + OBSTACLE.drone.bodyHeight / 2);
         }
         break;
       }
@@ -207,6 +252,12 @@ export class GameState {
       if (this.player.takeHit()) {
         this.hitstop = JUICE.hitstopDuration;
         this.shake = JUICE.shakeOnHit;
+        this.player.bounds(this.boxA);
+        this.emit(
+          this.player.dead ? 'death' : 'hit',
+          this.boxA.x + this.boxA.w / 2,
+          this.boxA.y + this.boxA.h / 2,
+        );
       }
       return;
     }

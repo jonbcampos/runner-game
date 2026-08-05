@@ -1,4 +1,4 @@
-import { SHOT, VIRTUAL_W } from './config';
+import { SHOT, SCREEN } from './config';
 import type { Aabb } from './collision';
 
 export interface Shot {
@@ -45,7 +45,7 @@ export class ShotPool {
       if (!shot.active) continue;
       shot.prevX = shot.x;
       shot.x += SHOT.speed * dt;
-      if (shot.x > VIRTUAL_W + SHOT.width) shot.active = false;
+      if (shot.x > SCREEN.w + SHOT.width) shot.active = false;
     }
   }
 

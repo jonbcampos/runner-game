@@ -1,10 +1,12 @@
+import { Audio } from './core/audio';
 import { Input } from './core/input';
 import { startLoop } from './core/loop';
 import { Viewport } from './core/viewport';
-import type { DifficultyId } from './game/config';
-import { GameState, validateDesignContracts } from './game/state';
+import { PLAYER_X, type DifficultyId } from './game/config';
+import { GameState, validateDesignContracts, type GameEvent } from './game/state';
 import { neonRenderer } from './render/neon';
-import { gameOverMenu, hitTestMenu, titleMenu } from './ui/screens';
+import { Particles } from './render/particles';
+import { gameOverMenu, hitTestMenu, muteButton, setMutedDisplay, titleMenu } from './ui/screens';
 
 const BEST_KEY = 'three-verbs.best';
 const DIFFICULTY_KEY = 'three-verbs.difficulty';
@@ -16,6 +18,9 @@ const viewport = new Viewport(canvas);
 const input = new Input(viewport);
 const state = new GameState();
 const renderer = neonRenderer;
+const particles = new Particles();
+const audio = new Audio();
+setMutedDisplay(audio.muted);
 
 // Surface any broken design contract loudly. See validateDesignContracts().
 for (const problem of validateDesignContracts()) {
@@ -38,8 +43,16 @@ function routeMenus(): void {
   if (!tap) return;
 
   if (state.phase === 'title') {
+    const mute = muteButton();
+    if (tap.x >= mute.x - 8 && tap.x <= mute.x + mute.w + 8 &&
+        tap.y >= mute.y - 8 && tap.y <= mute.y + mute.h + 8) {
+      setMutedDisplay(audio.toggleMute());
+      if (!audio.muted) audio.play('select');
+      return;
+    }
     const hit = hitTestMenu(titleMenu(), tap.x, tap.y);
     if (hit && hit.id !== 'restart' && hit.id !== 'menu') {
+      audio.play('select');
       startRun(hit.id);
     }
     return;
@@ -47,8 +60,13 @@ function routeMenus(): void {
 
   if (state.phase === 'gameover') {
     const hit = hitTestMenu(gameOverMenu(), tap.x, tap.y);
-    if (hit?.id === 'restart') startRun(lastDifficulty);
-    else if (hit?.id === 'menu') state.phase = 'title';
+    if (hit?.id === 'restart') {
+      audio.play('select');
+      startRun(lastDifficulty);
+    } else if (hit?.id === 'menu') {
+      audio.play('select');
+      state.phase = 'title';
+    }
   }
 }
 
@@ -58,15 +76,76 @@ function startRun(difficulty: DifficultyId): void {
   previousBest = state.best;
   // A fresh seed per run. Deterministic within a run (see Rng), random between.
   state.start(difficulty, (Math.random() * 0xffffffff) >>> 0);
+  particles.reset();
   // Drop anything buffered by the tap that started the run, so the first frame
   // of gameplay doesn't open with a phantom jump.
   input.clearBuffers();
 }
 
-/** One simulation step: menus, then the run itself, then score persistence. */
+/**
+ * Turn one simulation event into sound and particles.
+ *
+ * This lives here rather than in the game so that `src/game/` stays unaware of
+ * both renderers and speakers — the same boundary that keeps the pixel-art
+ * renderer a drop-in later.
+ */
+function presentEvent(event: GameEvent): void {
+  const random = () => state.rng.next();
+  switch (event.type) {
+    case 'jump':
+      audio.play('jump');
+      break;
+    case 'slide':
+      audio.play('slide');
+      break;
+    case 'shoot':
+      audio.play('shoot');
+      break;
+    case 'shoot-impact':
+      particles.shotImpact(event.x, event.y, random);
+      break;
+    case 'land':
+      particles.landing(event.x, random);
+      break;
+    case 'kill':
+      audio.play('kill');
+      particles.droneDeath(event.x, event.y, random);
+      break;
+    case 'hit':
+      audio.play('hit');
+      particles.playerDeath(event.x, event.y, random);
+      break;
+    case 'death':
+      audio.play('death');
+      particles.playerDeath(event.x, event.y, random);
+      break;
+    case 'sector':
+      audio.play('sector');
+      break;
+  }
+}
+
+/** Trailing sparks while sliding. Continuous, so it isn't an event. */
+let slideSparkTimer = 0;
+function updateSlideSparks(dt: number): void {
+  if (state.phase !== 'playing' || !state.player.sliding) return;
+  slideSparkTimer -= dt;
+  if (slideSparkTimer > 0) return;
+  slideSparkTimer = 0.03;
+  particles.slideSpark(PLAYER_X + 2, () => state.rng.next());
+}
+
+/** One simulation step: menus, then the run itself, then presentation. */
 function step(dt: number): void {
+  // Any touch at all is a valid gesture to start audio with; browsers refuse
+  // to create an AudioContext before one.
+  if (input.consumeAnyPress()) audio.unlock();
+
   routeMenus();
   state.update(dt, input);
+  state.drainEvents(presentEvent);
+  updateSlideSparks(dt);
+  particles.update(dt, state.phase === 'playing' ? state.scrollSpeed : 0);
 
   if (state.best > previousBest) {
     previousBest = state.best;
@@ -77,7 +156,7 @@ function step(dt: number): void {
 startLoop({
   update: step,
   render(alpha) {
-    renderer.draw(viewport.ctx, state, input, alpha);
+    renderer.draw(viewport.ctx, state, input, alpha, particles);
   },
 });
 
@@ -108,6 +187,8 @@ if (import.meta.env.DEV) {
       input,
       viewport,
       startRun,
+      audio,
+      particles,
       verify: v.verify,
       tune: t.tune,
       showTuning: t.showTuning,

@@ -1,4 +1,4 @@
-import { DIFFICULTIES, VIRTUAL_H, VIRTUAL_W, type DifficultyId } from '../game/config';
+import { DIFFICULTIES, VIRTUAL_H, SCREEN, type DifficultyId } from '../game/config';
 import type { GameState } from '../game/state';
 import { PALETTE, alpha } from '../render/palette';
 import { drawText } from './text';
@@ -31,7 +31,7 @@ export function titleMenu(): MenuRect[] {
     id,
     label: DIFFICULTIES[id].label,
     sub: `${DIFFICULTIES[id].hp} HP`,
-    x: VIRTUAL_W / 2 - w / 2,
+    x: SCREEN.w / 2 - w / 2,
     y: startY + i * (h + gap),
     w,
     h,
@@ -45,7 +45,7 @@ export function gameOverMenu(): MenuRect[] {
     {
       id: 'restart',
       label: 'RETRY',
-      x: VIRTUAL_W / 2 - w - 6,
+      x: SCREEN.w / 2 - w - 6,
       y: VIRTUAL_H / 2 + 30,
       w,
       h,
@@ -53,12 +53,28 @@ export function gameOverMenu(): MenuRect[] {
     {
       id: 'menu',
       label: 'MENU',
-      x: VIRTUAL_W / 2 + 6,
+      x: SCREEN.w / 2 + 6,
       y: VIRTUAL_H / 2 + 30,
       w,
       h,
     },
   ];
+}
+
+/** Sound toggle, bottom-left of the title screen. */
+export function muteButton(): { x: number; y: number; w: number; h: number } {
+  return { x: 10, y: VIRTUAL_H - 26, w: 62, h: 18 };
+}
+
+/**
+ * Mirror of the audio mute flag, for drawing.
+ *
+ * Pushed in rather than read from storage each frame — this is drawn 60 times a
+ * second and localStorage reads are synchronous.
+ */
+let mutedForDisplay = false;
+export function setMutedDisplay(muted: boolean): void {
+  mutedForDisplay = muted;
 }
 
 export function hitTestMenu(rects: readonly MenuRect[], x: number, y: number): MenuRect | null {
@@ -85,15 +101,15 @@ export function drawScreens(ctx: CanvasRenderingContext2D, state: GameState): vo
 
 function drawTitle(ctx: CanvasRenderingContext2D, state: GameState): void {
   ctx.fillStyle = alpha(PALETTE.skyTop, 0.72);
-  ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+  ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
-  drawText(ctx, 'THREE VERBS', VIRTUAL_W / 2, 44, {
+  drawText(ctx, 'THREE VERBS', SCREEN.w / 2, 44, {
     size: 26,
     color: PALETTE.player,
     align: 'center',
     glow: true,
   });
-  drawText(ctx, 'JUMP  ·  SHOOT  ·  SLIDE', VIRTUAL_W / 2, 64, {
+  drawText(ctx, 'JUMP  ·  SHOOT  ·  SLIDE', SCREEN.w / 2, 64, {
     size: 9,
     color: PALETTE.hudDim,
     align: 'center',
@@ -104,27 +120,55 @@ function drawTitle(ctx: CanvasRenderingContext2D, state: GameState): void {
   }
 
   if (state.best > 0) {
-    drawText(ctx, `BEST  ${state.best}m`, VIRTUAL_W / 2, VIRTUAL_H - 18, {
+    drawText(ctx, `BEST  ${state.best}m`, SCREEN.w / 2, VIRTUAL_H - 18, {
       size: 9,
       color: PALETTE.hudDim,
       align: 'center',
+    });
+  }
+
+  const mute = muteButton();
+  ctx.strokeStyle = alpha(PALETTE.hudDim, 0.7);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mute.x + 0.5, mute.y + 0.5, mute.w - 1, mute.h - 1);
+  drawText(
+    ctx,
+    mutedForDisplay ? 'SOUND OFF' : 'SOUND ON',
+    mute.x + mute.w / 2,
+    mute.y + mute.h / 2,
+    {
+      size: 8,
+      color: mutedForDisplay ? PALETTE.hudDim : PALETTE.hudAccent,
+      align: 'center',
+    },
+  );
+
+  // In portrait the game is drawn sideways to fill the screen, which only makes
+  // sense once you turn the phone. Say so, and say which way — the rotation
+  // direction is fixed, so guessing wrong means playing upside down.
+  if (SCREEN.rotated) {
+    drawText(ctx, '↺  TURN YOUR PHONE LEFT', SCREEN.w / 2, VIRTUAL_H - 34, {
+      size: 10,
+      color: PALETTE.shot,
+      align: 'center',
+      glow: true,
     });
   }
 }
 
 function drawGameOver(ctx: CanvasRenderingContext2D, state: GameState): void {
   ctx.fillStyle = alpha(PALETTE.skyTop, 0.78);
-  ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+  ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
   const isBest = state.metres >= state.best && state.metres > 0;
 
-  drawText(ctx, 'WRECKED', VIRTUAL_W / 2, VIRTUAL_H / 2 - 46, {
+  drawText(ctx, 'WRECKED', SCREEN.w / 2, VIRTUAL_H / 2 - 46, {
     size: 22,
     color: PALETTE.spike,
     align: 'center',
     glow: true,
   });
-  drawText(ctx, `${state.metres}m`, VIRTUAL_W / 2, VIRTUAL_H / 2 - 14, {
+  drawText(ctx, `${state.metres}m`, SCREEN.w / 2, VIRTUAL_H / 2 - 14, {
     size: 30,
     color: PALETTE.hudText,
     align: 'center',
@@ -133,7 +177,7 @@ function drawGameOver(ctx: CanvasRenderingContext2D, state: GameState): void {
   drawText(
     ctx,
     isBest ? 'NEW BEST' : `BEST  ${state.best}m`,
-    VIRTUAL_W / 2,
+    SCREEN.w / 2,
     VIRTUAL_H / 2 + 10,
     {
       size: 9,

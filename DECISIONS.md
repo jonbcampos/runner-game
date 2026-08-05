@@ -74,8 +74,8 @@ assets at all.
 **Why:** Speed. It reads as cool to an adult and bright to a kid, stays crisp at any resolution, and
 needed zero sprite work to get playable. The 16-bit look is the eventual destination.
 
-**How the later switch stays cheap:** The game renders at a fixed virtual resolution (480×270) and
-all drawing sits behind a `Renderer` interface. `src/game/` never imports from `src/render/` — the
+**How the later switch stays cheap:** The game renders at a fixed virtual *height* (see decision 19)
+and all drawing sits behind a `Renderer` interface. `src/game/` never imports from `src/render/` — the
 simulation has no idea how it looks. The pixel renderer is a second implementation of that
 interface; the game logic doesn't change by a line.
 
@@ -93,8 +93,8 @@ collisions on slow frames. Android spans 60–144 Hz, so this is a real problem,
 
 ## 8. Obstacles come from authored patterns, never spawned individually
 
-**Decided:** M1 uses a fixed hand-written script; M3 replaces it with a library of authored patterns
-picked by a director. The script is injectable (`GameState.start(difficulty, seed, script)`).
+**Decided:** M1 used a fixed hand-written script; M3 replaced it with a library of authored patterns
+picked by a director (see decision 20).
 
 **Why:** Randomly placing individual obstacles produces runs that feel arbitrary. Authored chunks
 feel designed. It also means hand-designed levels are a *new consumer of existing data* rather than
@@ -131,7 +131,7 @@ actually spans. Tune in that one.
 ## 10. The design contracts are machine-checked
 
 **Decided:** `__game.verify()` (dev builds) simulates every hazard against every verb on every
-difficulty — 37 checks. `validateDesignContracts()` runs on page load and logs errors.
+difficulty, plus hold-to-slide behaviour and director spacing — 43 checks and growing. `validateDesignContracts()` runs on page load and logs errors.
 
 **Why:** "A drone must not be jumpable" is enforced by the *dimensions*, which are derived from
 values meant to be tuned freely. Raising the jump height one afternoon could silently make every
@@ -229,3 +229,100 @@ dependencies — it writes the PNG with Node's built-in zlib.
 
 **Why:** A committed binary is opaque and un-editable. A script means the icon regenerates when the
 art direction changes — which it will, at the 16-bit switch.
+
+---
+
+## 18. Slide is hold-to-continue, capped at the distance-derived max
+
+**Decided:** Pressing slide starts it; releasing ends it, subject to a 0.12s minimum. A fully-held
+slide still lasts exactly as long as decision 9 requires.
+
+**Why:** Jonathan's call, and it's right — it mirrors variable jump height, which was already the
+best-feeling thing in the game. A fixed-duration slide is an animation you wait out; a held one is a
+decision you keep making. It has a real cost too, because the sliding hitbox reaches further forward
+into whatever is coming next, so over-committing is punished.
+
+The minimum hold exists so a quick tap still produces a visible slide. Without it, a one-frame slide
+looks like a dropped input rather than a short one.
+
+**Knock-on benefit:** the director can space obstacles tighter after a beam, because the player is
+now only committed for the minimum hold plus cooldown rather than the full slide.
+
+**Jumping out of a slide deliberately skips the re-slide cooldown** — slide, jump, slide on landing
+is a real move, and charging it a cooldown would punish the better player.
+
+---
+
+## 19. The frame adapts in width, and rotates in portrait
+
+**Decided:** Virtual height stays fixed at 270. Width follows the device aspect ratio, clamped to
+480–560. In portrait, the entire presentation is drawn rotated 90°.
+
+**Why:** Jonathan reported the game was tiny on his phone. Two separate causes:
+
+*Landscape:* a fixed 16:9 frame on a 20:9 phone wastes two fat black bars. Fixing height keeps
+gameplay identical everywhere (jump apex, beam clearance and drone height are all vertical), while
+letting width follow the screen fills it edge to edge.
+
+*Portrait:* a landscape frame letterboxed into portrait is a thin strip across the middle — most of
+the screen wasted. Rotating the presentation ourselves means the game fills the screen and the
+player just turns the phone. This matters more than it sounds: **plenty of people keep rotation lock
+on**, so the browser never reports landscape no matter how they hold the device, and the manifest's
+`orientation: landscape` only binds once the PWA is installed. Rotating ourselves works regardless.
+
+**Tradeoff, stated plainly:** a wider frame shows hazards sooner, so it is marginally easier.
+MAX_VIRTUAL_W bounds how much. The alternative — hazards popping into existence mid-screen — looks
+far worse.
+
+**Cost:** `toVirtual` has to invert the rotation exactly, or buttons are drawn in one place and
+tappable in another. Verified with a round-trip test: zero drift.
+
+---
+
+## 20. The director guarantees spacing; patterns only describe rhythm
+
+**Decided:** `patterns.ts` holds ~22 authored sequences tiered by verb count and minimum sector.
+`director.ts` picks among the eligible ones and widens any gap that's too tight for the verbs on
+either side of it, using per-verb recovery times computed at the *current* scroll speed.
+
+**Why:** Pattern authors should write the feel they want without reasoning about scroll speed. A gap
+that reads fine at 150 px/s can be unfair at 400. Rather than requiring every author to do that
+arithmetic, the director enforces the floor at runtime — the same "express it in the invariant unit"
+idea as decision 9, applied to authoring.
+
+Recovery time per hazard: a spike costs the full jump airtime (you're committed until you land), a
+beam costs only the minimum slide hold plus cooldown (thanks to decision 18), a drone costs the time
+to land the shots that kill it.
+
+**Verified**, not assumed: the harness runs the real director at each difficulty's top speed for 300
+simulated seconds and asserts no emitted gap is ever below the floor — ~900 spawns, zero violations.
+
+**Difficulty rises mainly through the rest between patterns**, not through tighter gaps inside them.
+Phrases stay readable; you just get less time to breathe between them.
+
+---
+
+## 21. Sound is synthesized, never sampled
+
+**Decided:** Every effect is oscillators and envelopes built at runtime. No audio files.
+
+**Why:** Keeps the whole game a ~25 kB download and means sounds are tuned by editing numbers rather
+than by opening an audio editor. It also suits the art direction — this should sound like a machine,
+not like a recording.
+
+The AudioContext is created on the first user gesture (browsers refuse earlier) and resumed on every
+play, because a backgrounded app can get its context suspended and would otherwise go silent forever.
+
+---
+
+## 22. Presentation is driven by an event queue, not by direct calls
+
+**Decided:** `GameState` pushes typed events (`jump`, `kill`, `sector`, …) into a pre-allocated ring;
+`main.ts` drains them into sound and particles.
+
+**Why:** `src/game/` must not know that renderers or speakers exist — the same boundary that keeps
+the planned pixel-art renderer a drop-in (decision 6). Direct calls from the simulation into an audio
+module would quietly couple them.
+
+Slots are pre-allocated and reused, so a busy frame allocates nothing (decision 11's reasoning about
+GC hitches applies here too).

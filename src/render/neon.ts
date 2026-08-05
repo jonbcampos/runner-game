@@ -1,4 +1,4 @@
-import { GROUND_Y, OBSTACLE, SHOT, VIRTUAL_H, VIRTUAL_W } from '../game/config';
+import { GROUND_Y, OBSTACLE, SHOT, VIRTUAL_H, SCREEN } from '../game/config';
 import type { Aabb } from '../game/collision';
 import type { Obstacle } from '../game/obstacles';
 import type { GameState } from '../game/state';
@@ -12,7 +12,7 @@ import { drawTouchpad } from '../ui/touchpad';
 const scratch: Aabb = { x: 0, y: 0, w: 0, h: 0 };
 
 export const neonRenderer: Renderer = {
-  draw(ctx, state, input, interpolation) {
+  draw(ctx, state, input, interpolation, particles) {
     ctx.save();
 
     // Screenshake is applied to the world only — the HUD and buttons are drawn
@@ -26,6 +26,7 @@ export const neonRenderer: Renderer = {
     drawObstacles(ctx, state, interpolation);
     drawShots(ctx, state, interpolation);
     drawPlayer(ctx, state, interpolation);
+    particles.draw(ctx);
 
     ctx.restore();
 
@@ -252,7 +253,7 @@ function drawDeath(ctx: CanvasRenderingContext2D, item: Obstacle, x: number): vo
 /** Exported for the screens layer, which dims the world behind its overlays. */
 export function dimWorld(ctx: CanvasRenderingContext2D, amount: number): void {
   ctx.fillStyle = alpha(PALETTE.skyTop, amount);
-  ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+  ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 }
 
 export { GROUND_Y };

@@ -1,5 +1,6 @@
 import type { GameState } from '../game/state';
 import type { Input } from '../core/input';
+import type { Particles } from './particles';
 
 /**
  * Everything the game knows how to draw, behind one interface.
@@ -11,5 +12,11 @@ import type { Input } from '../core/input';
  * logic doesn't change by a line.
  */
 export interface Renderer {
-  draw(ctx: CanvasRenderingContext2D, state: GameState, input: Input, alpha: number): void;
+  draw(
+    ctx: CanvasRenderingContext2D,
+    state: GameState,
+    input: Input,
+    alpha: number,
+    particles: Particles,
+  ): void;
 }

@@ -1,5 +1,15 @@
-import { FIXED_DT, PLAYER_X, type DifficultyId } from '../game/config';
+import {
+  DIFFICULTIES,
+  FIXED_DT,
+  PLAYER,
+  PLAYER_X,
+  WORLD,
+  type DifficultyId,
+} from '../game/config';
+import { Director, minimumGapSeconds } from '../game/director';
 import { ObstacleField, SOLVED_BY, type ObstacleKind } from '../game/obstacles';
+import { Rng } from '../core/rng';
+import { slideDurationAt } from '../game/player';
 import { GameState } from '../game/state';
 import type { Action } from '../core/input';
 
@@ -72,8 +82,8 @@ function trial(
 ): boolean {
   const state = new GameState();
   const input = new FakeInput();
-  // Empty script: the only hazard is the one placed below.
-  state.start(difficulty, 1, []);
+  // Director off: the only hazard is the one placed below.
+  state.start(difficulty, 1, false);
   const startingHp = state.player.hp;
 
   const obstacle = state.obstacles.spawn(kind, ObstacleField.spawnX);
@@ -94,7 +104,11 @@ function trial(
       if (timeToImpact < 0.2 && timeToImpact > -0.05 && state.player.grounded) input.press('jump');
       if (timeToImpact < -0.1) input.release('jump');
     } else if (verb === 'slide') {
-      if (timeToImpact < 0.2 && timeToImpact > -0.2) input.press('slide');
+      // Slide is hold-to-continue, so this holds from ~0.2s out until the
+      // hazard's trailing edge is behind the player — which is what a person
+      // does. A tap deliberately isn't enough any more, and shouldn't be.
+      const trailingEdgeCleared = lead + obstacle.w + 8 < 0;
+      if (timeToImpact < 0.2 && !trailingEdgeCleared) input.press('slide');
       else input.release('slide');
     } else if (verb === 'shoot') {
       // Fire from the moment it's on screen; the cooldown paces it.
@@ -125,7 +139,7 @@ function trialGameOver(): { reachedGameOver: boolean; steps: number } {
   const state = new GameState();
   const input = new FakeInput();
   // 'hard' is 1 HP, so a single hit is fatal.
-  state.start('hard', 1, []);
+  state.start('hard', 1, false);
   state.obstacles.spawn('spike', ObstacleField.spawnX);
 
   const maxSteps = Math.ceil(10 / FIXED_DT);
@@ -134,6 +148,91 @@ function trialGameOver(): { reachedGameOver: boolean; steps: number } {
     if (state.phase === 'gameover') return { reachedGameOver: true, steps: step };
   }
   return { reachedGameOver: false, steps: maxSteps };
+}
+
+/**
+ * Slide must respond to how long the button is held, the way the jump does.
+ *
+ * Three things have to hold at once, and they pull against each other: a tap
+ * has to end early (or it isn't hold-to-slide), a tap still has to last the
+ * minimum (or it looks like a dropped input), and a full hold has to reach the
+ * distance-derived cap (or it stops clearing beams).
+ */
+function trialSlideHold(): { tapEndsEarly: boolean; tapRespectsFloor: boolean; holdReachesMax: boolean } {
+  const measure = (holdSeconds: number): number => {
+    const state = new GameState();
+    const input = new FakeInput();
+    state.start('normal', 1, false);
+    input.press('slide');
+
+    let elapsed = 0;
+    let slidingFor = 0;
+    for (let step = 0; step < Math.ceil(4 / FIXED_DT); step++) {
+      if (elapsed >= holdSeconds) input.release('slide');
+      state.update(FIXED_DT, input as never);
+      elapsed += FIXED_DT;
+      if (state.player.sliding) slidingFor += FIXED_DT;
+      else if (slidingFor > 0) break;
+    }
+    return slidingFor;
+  };
+
+  const maxSlide = slideDurationAt(WORLD.baseScrollSpeed * DIFFICULTIES.normal.speedScale);
+  const tap = measure(0.01);
+  const held = measure(10);
+
+  return {
+    tapEndsEarly: tap < maxSlide * 0.6,
+    // Within a step of the floor; the loop can't land exactly on it.
+    tapRespectsFloor: tap >= PLAYER.slideMinHold - FIXED_DT * 2,
+    holdReachesMax: held >= maxSlide - FIXED_DT * 2,
+  };
+}
+
+/**
+ * The director must never emit a gap too short for the verbs on either side.
+ *
+ * This drives the real director rather than inspecting the pattern table,
+ * because the table is only half the story — patterns are authored at a
+ * comfortable rhythm and the director is what widens them as the game speeds
+ * up. Checked at the speed cap, which is the worst case: the fastest the world
+ * ever moves, so the least real time any authored gap is worth.
+ */
+function trialDirectorSpacing(): { difficulty: DifficultyId; violations: number; spawns: number }[] {
+  const out: { difficulty: DifficultyId; violations: number; spawns: number }[] = [];
+
+  for (const difficultyId of ['kid', 'normal', 'hard'] as DifficultyId[]) {
+    const difficulty = DIFFICULTIES[difficultyId];
+    const director = new Director();
+    director.reset(difficulty);
+    const rng = new Rng(7);
+    // Pin to the top speed this difficulty ever reaches.
+    const scrollSpeed = WORLD.speedCap * difficulty.speedScale;
+
+    let elapsed = 0;
+    let lastSpawnAt = -Infinity;
+    let lastKind: ObstacleKind | null = null;
+    let violations = 0;
+    let spawns = 0;
+
+    // Deep into a run, so late-sector patterns and the tightened rest are covered.
+    for (let step = 0; step < Math.ceil(300 / FIXED_DT); step++) {
+      const sector = Math.floor(elapsed / WORLD.sectorLength) + 1;
+      director.update(FIXED_DT, { difficulty, sector, scrollSpeed, rng }, (kind) => {
+        if (lastKind) {
+          const gap = elapsed - lastSpawnAt;
+          // One step of tolerance: spawns land on tick boundaries.
+          if (gap < minimumGapSeconds(lastKind, scrollSpeed) - FIXED_DT * 2) violations++;
+        }
+        lastSpawnAt = elapsed;
+        lastKind = kind;
+        spawns++;
+      });
+      elapsed += FIXED_DT;
+    }
+    out.push({ difficulty: difficultyId, violations, spawns });
+  }
+  return out;
 }
 
 export function verify(): TrialResult[] {
@@ -169,6 +268,36 @@ export function verify(): TrialResult[] {
       ? `[verify] fatal hit reaches game over in ${(gameOver.steps * FIXED_DT).toFixed(2)}s`
       : '[verify] BROKEN: a fatal hit never reaches the game-over screen',
   );
+
+  for (const row of trialDirectorSpacing()) {
+    const ok = row.violations === 0;
+    results.push({
+      difficulty: row.difficulty,
+      kind: 'spike',
+      verb: 'nothing',
+      survived: ok,
+      expected: true,
+      pass: ok,
+    });
+    console.log(
+      ok
+        ? `[verify] director spacing ok on ${row.difficulty} (${row.spawns} spawns at top speed)`
+        : `[verify] director emitted ${row.violations} unsurvivable gaps on ${row.difficulty}`,
+    );
+  }
+
+  const slide = trialSlideHold();
+  for (const [name, ok] of Object.entries(slide)) {
+    results.push({
+      difficulty: 'normal',
+      kind: 'beam',
+      verb: 'slide',
+      survived: ok,
+      expected: true,
+      pass: ok,
+    });
+    if (!ok) console.error(`[verify] hold-to-slide BROKEN: ${name}`);
+  }
 
   const failures = results.filter((r) => !r.pass);
   console.table(

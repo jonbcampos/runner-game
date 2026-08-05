@@ -59,11 +59,23 @@ export class Player {
   pose: PlayerPose = 'run';
   grounded = true;
 
+  /**
+   * One-shot flags for things that happened during the last update, so the
+   * caller can turn them into sound and particles. Reset at the top of each
+   * update rather than by the reader, so a missed read can't leak into the
+   * next frame and fire a sound twice.
+   */
+  justJumped = false;
+  justSlid = false;
+  justLanded = false;
+
   hp = 1;
   maxHp = 1;
 
   private coyote = 0;
   private slideTimer = 0;
+  /** Remaining minimum slide time; a release before this is ignored. */
+  private slideHoldFloor = 0;
   private slideCooldownTimer = 0;
   private shotCooldownTimer = 0;
   private invulnTimer = 0;
@@ -88,6 +100,7 @@ export class Player {
     this.maxHp = hp;
     this.coyote = PLAYER.coyoteTime;
     this.slideTimer = 0;
+    this.slideHoldFloor = 0;
     this.slideCooldownTimer = 0;
     this.shotCooldownTimer = 0;
     this.invulnTimer = 0;
@@ -116,6 +129,9 @@ export class Player {
    */
   update(dt: number, input: Input, scrollSpeed: number): ShotRequest | null {
     this.prevFeetY = this.feetY;
+    this.justJumped = false;
+    this.justSlid = false;
+    this.justLanded = false;
 
     if (this.pose === 'dead') {
       this.applyGravity(dt);
@@ -131,14 +147,21 @@ export class Player {
     if (this.slideTimer <= 0 && this.grounded && this.slideCooldownTimer <= 0) {
       if (input.consume('slide')) {
         this.slideTimer = slideDurationAt(scrollSpeed);
+        this.slideHoldFloor = PLAYER.slideMinHold;
         this.pose = 'slide';
+        this.justSlid = true;
       }
     }
     if (this.slideTimer > 0) {
       this.slideTimer -= dt;
-      if (this.slideTimer <= 0) {
-        this.slideTimer = 0;
-        this.slideCooldownTimer = PLAYER.slideCooldown;
+      if (this.slideHoldFloor > 0) this.slideHoldFloor -= dt;
+
+      // Hold-to-continue: letting go stands you back up, once the minimum has
+      // elapsed. The cap still guarantees a fully-held slide clears a beam;
+      // ending it early is the player's call, and their risk.
+      const released = !input.down.slide && this.slideHoldFloor <= 0;
+      if (released || this.slideTimer <= 0) {
+        this.endSlide();
       }
     }
 
@@ -156,7 +179,12 @@ export class Player {
       this.grounded = false;
       this.coyote = 0;
       this.jumpCut = false;
+      this.justJumped = true;
+      // Jumping cancels a slide outright, and deliberately without starting the
+      // re-slide cooldown: slide, jump out, slide again on landing is a real
+      // move, and charging it a cooldown would punish the better player.
       this.slideTimer = 0;
+      this.slideHoldFloor = 0;
     }
 
     // Variable jump height: releasing the button while still rising cuts the
@@ -187,6 +215,13 @@ export class Player {
     return shot;
   }
 
+  /** Stand back up and start the re-slide cooldown. */
+  private endSlide(): void {
+    this.slideTimer = 0;
+    this.slideHoldFloor = 0;
+    this.slideCooldownTimer = PLAYER.slideCooldown;
+  }
+
   private tickTimers(dt: number): void {
     if (this.slideCooldownTimer > 0) this.slideCooldownTimer -= dt;
     if (this.shotCooldownTimer > 0) this.shotCooldownTimer -= dt;
@@ -212,6 +247,7 @@ export class Player {
       if (!this.grounded) {
         this.grounded = true;
         this.jumpCut = false;
+        this.justLanded = true;
       }
       this.vy = 0;
       this.coyote = PLAYER.coyoteTime;

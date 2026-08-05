@@ -11,9 +11,41 @@
 
 // --- Screen -----------------------------------------------------------------
 
-/** 16:9. Small enough that a "pixel" is a meaningful unit, big enough for detail. */
-export const VIRTUAL_W = 480;
+/**
+ * The virtual frame the game is drawn into.
+ *
+ * Height is FIXED. Everything about the gameplay is vertical — jump apex,
+ * beam clearance, how tall a drone is — so a constant height means the game
+ * plays identically on every device.
+ *
+ * Width ADAPTS to the device's aspect ratio, between the two clamps below.
+ * A fixed 16:9 frame letterboxed onto a modern phone (often 20:9 or taller in
+ * landscape) wastes big black bars on either side. Letting the width follow the
+ * screen fills it edge to edge.
+ *
+ * The tradeoff, stated plainly: a wider frame shows hazards sooner, so it's
+ * marginally easier. MAX_VIRTUAL_W bounds how much. It's the same tradeoff
+ * every game with a variable viewport makes, and the alternative — hazards
+ * popping into existence mid-screen — looks far worse.
+ */
+export const DESIGN_W = 480;
 export const VIRTUAL_H = 270;
+
+/** Never narrower than the design width, or hazards arrive with no warning. */
+export const MIN_VIRTUAL_W = DESIGN_W;
+/** Caps how much extra reaction time a very wide screen can buy. */
+export const MAX_VIRTUAL_W = 560;
+
+/**
+ * The live frame size. Mutated by Viewport on resize; read by everything that
+ * draws or positions against the screen edges.
+ */
+export const SCREEN = {
+  w: DESIGN_W,
+  h: VIRTUAL_H,
+  /** True when the device is portrait and the game is being drawn sideways. */
+  rotated: false,
+};
 
 /** Y coordinate of the ground line. Player stands on this. */
 export const GROUND_Y = 210;
@@ -122,9 +154,25 @@ export const PLAYER = {
    */
   slideDistance: 108,
 
-  /** Guard rails on the derived duration, so extreme speeds stay sane. */
+  /**
+   * Guard rails on the derived duration, so extreme speeds stay sane. This is
+   * the *maximum* slide — how far a fully-held slide carries you.
+   */
   slideMinDuration: 0.25,
   slideMaxDuration: 1.0,
+
+  /**
+   * Slide is hold-to-continue: it ends when you let go, capped at the derived
+   * max. Same shape as variable jump height — one button covering a range
+   * rather than a fixed animation you wait out — which means committing to a
+   * long slide is a real choice, since the sliding hitbox reaches further
+   * forward into whatever is coming next.
+   *
+   * This minimum exists so a quick tap still produces a slide you can see and
+   * that clears something. Without it a 1-frame slide looks like a dropped
+   * input rather than a short one.
+   */
+  slideMinHold: 0.12,
 
   /** You can't immediately re-slide; prevents mashing through beam sections. */
   slideCooldown: 0.12,

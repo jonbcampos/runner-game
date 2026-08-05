@@ -1,4 +1,4 @@
-import { GROUND_Y, VIRTUAL_H, VIRTUAL_W } from '../game/config';
+import { GROUND_Y, VIRTUAL_H, SCREEN } from '../game/config';
 import { PALETTE, alpha } from './palette';
 
 /**
@@ -17,7 +17,7 @@ export function drawBackground(ctx: CanvasRenderingContext2D, distance: number):
   sky.addColorStop(0, PALETTE.skyTop);
   sky.addColorStop(1, PALETTE.skyBottom);
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+  ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
   drawStars(ctx, distance * 0.05);
   drawSkyline(ctx, distance * 0.18, 0.55, PALETTE.farGrid, 34, 78);
@@ -30,10 +30,10 @@ function drawStars(ctx: CanvasRenderingContext2D, offset: number): void {
   // Deterministic pseudo-star field: cheap hash of the index, no allocation.
   for (let i = 0; i < 40; i++) {
     const seed = i * 2654435761;
-    const baseX = (seed >>> 8) % (VIRTUAL_W * 2);
+    const baseX = (seed >>> 8) % (SCREEN.w * 2);
     const y = ((seed >>> 3) % 120) + 8;
-    const x = wrap(baseX - offset, VIRTUAL_W * 2);
-    if (x > VIRTUAL_W) continue;
+    const x = wrap(baseX - offset, SCREEN.w * 2);
+    if (x > SCREEN.w) continue;
     ctx.fillRect(Math.floor(x), y, 1, 1);
   }
 }
@@ -48,13 +48,13 @@ function drawSkyline(
 ): void {
   ctx.fillStyle = color;
   const period = spacing * 2;
-  const span = VIRTUAL_W + period * 2;
+  const span = SCREEN.w + period * 2;
   const start = Math.floor(offset / period) * period;
 
   for (let i = 0; i * spacing < span; i++) {
     const worldX = start + i * spacing;
     const x = worldX - offset;
-    if (x > VIRTUAL_W || x < -period) continue;
+    if (x > SCREEN.w || x < -period) continue;
 
     const seed = Math.abs(Math.floor(worldX / spacing)) * 2246822519;
     const h = (((seed >>> 5) % maxHeight) + 18) * heightScale;
@@ -65,7 +65,7 @@ function drawSkyline(
 
 function drawGroundGrid(ctx: CanvasRenderingContext2D, distance: number): void {
   ctx.fillStyle = PALETTE.ground;
-  ctx.fillRect(0, GROUND_Y, VIRTUAL_W, VIRTUAL_H - GROUND_Y);
+  ctx.fillRect(0, GROUND_Y, SCREEN.w, VIRTUAL_H - GROUND_Y);
 
   // Perspective floor lines receding toward the ground line.
   ctx.strokeStyle = alpha(PALETTE.groundLine, 0.16);
@@ -73,13 +73,13 @@ function drawGroundGrid(ctx: CanvasRenderingContext2D, distance: number): void {
   const spacing = 48;
   const offset = wrap(distance, spacing);
   ctx.beginPath();
-  for (let x = -offset; x < VIRTUAL_W + spacing; x += spacing) {
+  for (let x = -offset; x < SCREEN.w + spacing; x += spacing) {
     ctx.moveTo(Math.round(x) + 0.5, GROUND_Y);
     ctx.lineTo(Math.round(x) - 60 + 0.5, VIRTUAL_H);
   }
   for (let y = GROUND_Y + 8; y < VIRTUAL_H; y += 14) {
     ctx.moveTo(0, y + 0.5);
-    ctx.lineTo(VIRTUAL_W, y + 0.5);
+    ctx.lineTo(SCREEN.w, y + 0.5);
   }
   ctx.stroke();
 
@@ -88,14 +88,14 @@ function drawGroundGrid(ctx: CanvasRenderingContext2D, distance: number): void {
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(0, GROUND_Y + 0.5);
-  ctx.lineTo(VIRTUAL_W, GROUND_Y + 0.5);
+  ctx.lineTo(SCREEN.w, GROUND_Y + 0.5);
   ctx.stroke();
 
   ctx.strokeStyle = PALETTE.groundLine;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, GROUND_Y + 0.5);
-  ctx.lineTo(VIRTUAL_W, GROUND_Y + 0.5);
+  ctx.lineTo(SCREEN.w, GROUND_Y + 0.5);
   ctx.stroke();
 }
 

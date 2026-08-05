@@ -1,4 +1,4 @@
-import { VIRTUAL_H, VIRTUAL_W } from '../game/config';
+import { VIRTUAL_H, SCREEN } from '../game/config';
 import type { Action, Input } from '../core/input';
 import type { GameState } from '../game/state';
 import { PALETTE, alpha } from '../render/palette';
@@ -24,35 +24,55 @@ export interface TouchButton {
  * the letterbox transform automatically and so every input — button presses and
  * gameplay taps alike — flows through one pointer pipeline.
  */
-export const TOUCH_BUTTONS: readonly TouchButton[] = [
-  {
-    action: 'shoot',
-    label: 'FIRE',
-    cx: 46,
-    cy: VIRTUAL_H - 42,
-    r: 26,
-    touchPadding: 12,
-  },
-  {
-    action: 'jump',
-    label: 'JUMP',
-    cx: VIRTUAL_W - 44,
-    cy: VIRTUAL_H - 56,
-    r: 28,
-    touchPadding: 12,
-  },
-  {
-    action: 'slide',
-    label: 'SLIDE',
-    cx: VIRTUAL_W - 104,
-    cy: VIRTUAL_H - 34,
-    r: 22,
-    touchPadding: 10,
-  },
-];
+function buildButtons(): TouchButton[] {
+  return [
+    {
+      action: 'shoot',
+      label: 'FIRE',
+      cx: 46,
+      cy: VIRTUAL_H - 42,
+      r: 26,
+      touchPadding: 12,
+    },
+    {
+      action: 'jump',
+      label: 'JUMP',
+      cx: SCREEN.w - 44,
+      cy: VIRTUAL_H - 56,
+      r: 28,
+      touchPadding: 12,
+    },
+    {
+      action: 'slide',
+      label: 'SLIDE',
+      cx: SCREEN.w - 104,
+      cy: VIRTUAL_H - 34,
+      r: 22,
+      touchPadding: 10,
+    },
+  ];
+}
+
+let cachedWidth = -1;
+let cachedButtons: TouchButton[] = [];
+
+/**
+ * Button layout for the current frame width.
+ *
+ * Memoised on width rather than rebuilt per call: this runs once per frame for
+ * drawing and again on every pointer event, and allocating three objects each
+ * time is exactly the kind of steady garbage that shows up as a frame hitch.
+ */
+export function touchButtons(): readonly TouchButton[] {
+  if (cachedWidth !== SCREEN.w) {
+    cachedWidth = SCREEN.w;
+    cachedButtons = buildButtons();
+  }
+  return cachedButtons;
+}
 
 export function hitTestButton(x: number, y: number): TouchButton | null {
-  for (const button of TOUCH_BUTTONS) {
+  for (const button of touchButtons()) {
     const dx = x - button.cx;
     const dy = y - button.cy;
     const reach = button.r + button.touchPadding;
@@ -76,7 +96,7 @@ export function drawTouchpad(
 ): void {
   if (state.phase !== 'playing') return;
 
-  for (const button of TOUCH_BUTTONS) {
+  for (const button of touchButtons()) {
     const pressed = input.down[button.action];
     const fill = pressed ? alpha(PALETTE.buttonActive, 0.3) : alpha(PALETTE.buttonIdle, 0.42);
     const edge = pressed ? PALETTE.buttonActive : alpha(PALETTE.buttonEdge, 0.65);
