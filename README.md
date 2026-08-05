@@ -1,15 +1,17 @@
-# Three Verbs
+# Ellie's Rainbow Run
 
 An auto-runner with exactly three moves — **jump, shoot, slide** — where the whole game is the
 split-second question *"which one does this obstacle want?"*
+
+Two themes: **RAINBOW** (the default) and **NEON** (the original look). Switch on the title screen.
 
 Every hazard has exactly one correct answer:
 
 | Hazard | Answer |
 | --- | --- |
-| Pink ground spikes | **JUMP** |
-| Purple overhead beam | **SLIDE** |
-| Orange drone + shield column | **SHOOT** (twice) |
+| Ground hazard (brambles / spikes) | **JUMP** |
+| Overhead hazard (rainbow gate / beam) | **SLIDE** |
+| Armoured hazard (rain cloud / drone) | **SHOOT** — 2 to 5 times, count the plates |
 
 ## Running it
 
@@ -69,6 +71,7 @@ dimensions stop enforcing its verb (a drone you could jump over, a beam you coul
 
 ## Status
 
-**M1 complete** — core loop, three verbs, three hazards, difficulty modes, death and restart.
+Playable and deployed: https://jonbcampos.github.io/runner-game/
 
-Next: PWA + deploy so it's on a phone, then the pattern director and audio, then a boss.
+Core loop, authored pattern director, boss fights, seven powerups, drone armour tiers, two themes,
+installable PWA with offline play. 66 automated design-contract checks.

@@ -591,3 +591,36 @@ approach band against SHOT.range at startup, and the harness walks 25 seeds and 
 opening the boss actually offers. 127 openings checked, furthest 188px against 230px of reach.
 
 Feints never happen twice in a row, so unpredictability can't turn into stalling.
+
+
+---
+
+## 36. Themes, not a reskin
+
+**Decided:** RAINBOW (default) and NEON coexist, chosen on the title screen and remembered. The game
+is now *Ellie's Rainbow Run*.
+
+**Why both:** the reskin was for Jonathan's daughter, but he liked the neon look — and once there
+are two there will probably be more. Replacing would have thrown away something that already worked.
+
+**What a theme owns:** its palette and how to draw every entity. What it emphatically does *not*
+own: layer order, screenshake, or anything the simulation depends on. Those live in `scene.ts`
+because they're rules about the game rather than about how it looks — a theme that could reorder
+layers could quietly make hazards invisible.
+
+This is decision 6 finally cashed in. `src/game/` has never imported from `src/render/`, so a
+bramble, a rainbow gate and a rain cloud slot in with **zero** changes to hitboxes, spacing
+guarantees, or any of the 66 checks — all of which still passed on the first run after the swap.
+
+**Two things the port taught:**
+- `PALETTE` is mutated in place on theme switch rather than threaded through every call. Exactly one
+  palette is ever active, so plumbing an argument through every draw and UI function would have been
+  a lot of churn for nothing.
+- Menus needed a dedicated `scrim` colour. The dark theme had been reusing its sky to dim the world,
+  which on a daylight theme *lightens* it — the title screen washed out to near-white. A scrim must
+  always be darker than what it covers, so it can't be derived from the background.
+
+**On the character:** Ellie is a stylised 16×24 figure — pink dress, white trim, long light hair —
+not a likeness, and the reference photo is deliberately not in the repo, which is public. At this
+size a character is a dozen rectangles anyway, and what matters is that the *pose* reads: running,
+jumping and sliding are gameplay information.

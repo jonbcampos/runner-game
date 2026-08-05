@@ -3,41 +3,24 @@ import { POWERUP_DEFS } from '../game/powerups';
 import type { Aabb } from '../game/collision';
 import type { Obstacle } from '../game/obstacles';
 import type { GameState } from '../game/state';
-import type { Renderer } from './renderer';
 import { drawBackground } from './parallax';
-import { PALETTE, alpha } from './palette';
-import { drawHud } from '../ui/hud';
+import { NEON_PALETTE, PALETTE, alpha } from './palette';
+import type { Theme } from './theme';
 import { drawText } from '../ui/text';
-import { drawScreens } from '../ui/screens';
-import { drawTouchpad } from '../ui/touchpad';
 
 const scratch: Aabb = { x: 0, y: 0, w: 0, h: 0 };
 
-export const neonRenderer: Renderer = {
-  draw(ctx, state, input, interpolation, particles) {
-    ctx.save();
-
-    // Screenshake is applied to the world only — the HUD and buttons are drawn
-    // after this restore, so the controls never jitter under the player's thumb.
-    if (state.shake > 0.05) {
-      const angle = state.elapsed * 90;
-      ctx.translate(Math.sin(angle) * state.shake, Math.cos(angle * 1.7) * state.shake * 0.6);
-    }
-
-    drawBackground(ctx, state.distance);
-    drawBoss(ctx, state, interpolation);
-    drawObstacles(ctx, state, interpolation);
-    drawPickups(ctx, state, interpolation);
-    drawShots(ctx, state, interpolation);
-    drawPlayer(ctx, state, interpolation);
-    particles.draw(ctx);
-
-    ctx.restore();
-
-    drawHud(ctx, state);
-    drawTouchpad(ctx, input, state);
-    drawScreens(ctx, state);
-  },
+/** The original look: glowing geometry on a dark scrolling city. */
+export const neonTheme: Theme = {
+  id: 'neon',
+  label: 'NEON',
+  palette: NEON_PALETTE,
+  background: (ctx, state) => drawBackground(ctx, state.distance),
+  boss: drawBoss,
+  obstacles: drawObstacles,
+  pickups: drawPickups,
+  shots: drawShots,
+  player: drawPlayer,
 };
 
 /** Stacked translucent rects fake a bloom far more cheaply than shadowBlur. */
@@ -432,7 +415,7 @@ function drawBoss(ctx: CanvasRenderingContext2D, state: GameState, interpolation
 
 /** Exported for the screens layer, which dims the world behind its overlays. */
 export function dimWorld(ctx: CanvasRenderingContext2D, amount: number): void {
-  ctx.fillStyle = alpha(PALETTE.skyTop, amount);
+  ctx.fillStyle = alpha(PALETTE.scrim, amount);
   ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 }
 

@@ -107,14 +107,24 @@ function encodePng(raster) {
 
 // ----------------------------------------------------------------- icon ----
 
-// Straight from src/render/palette.ts.
-const SKY_TOP = [13, 18, 48];
-const SKY_BOTTOM = [5, 6, 15];
-const PLAYER = [77, 226, 255];
-const PLAYER_CORE = [232, 253, 255];
-const GROUND_LINE = [58, 217, 255];
-const SHOT = [255, 209, 102];
-const SHOT_CORE = [255, 246, 216];
+// Straight from the UNICORN palette in src/render/palette.ts — the icon should
+// match the theme the game boots into, since that's what sits on the home
+// screen next to everything else.
+const SKY_TOP = [127, 199, 255];
+const SKY_BOTTOM = [255, 217, 238];
+const GRASS = [87, 173, 104];
+const DRESS = [255, 126, 179];
+const TRIM = [255, 243, 248];
+const SKIN = [240, 195, 154];
+const HAIR = [168, 118, 63];
+const RAINBOW = [
+  [255, 143, 174],
+  [255, 196, 107],
+  [255, 240, 106],
+  [143, 224, 143],
+  [127, 199, 255],
+  [199, 155, 255],
+];
 
 /**
  * The icon is authored on a 512 grid and scaled, with everything kept inside
@@ -126,33 +136,53 @@ function drawIcon(size) {
   const u = size / 512;
   r.verticalGradient(SKY_TOP, SKY_BOTTOM);
 
-  // Horizon line — the ground the player runs along.
-  r.fillRect(0, 372 * u, size, 8 * u, GROUND_LINE, 0.22);
-  r.fillRect(0, 376 * u, size, 3 * u, GROUND_LINE, 1);
+  // Rainbow arc behind her. Drawn as stacked bands rather than a stroked curve
+  // because the rasteriser only knows rectangles.
+  const cx = 256 * u;
+  const cy = 400 * u;
+  for (let i = 0; i < RAINBOW.length; i++) {
+    const radius = (200 - i * 18) * u;
+    const band = 18 * u;
+    for (let a = 0; a <= 180; a += 2) {
+      const rad = (a * Math.PI) / 180;
+      const bx = cx - Math.cos(rad) * radius;
+      const by = cy - Math.sin(rad) * radius;
+      r.fillRect(bx - band / 2, by - band / 2, band, band, RAINBOW[i], 0.9);
+    }
+  }
 
-  // The runner, caught mid-jump. The gap between its feet and the ground line
-  // is the whole point of the pose — landed reads as a mascot, airborne reads
-  // as a game about jumping.
-  const px = 124 * u;
+  // Meadow.
+  r.fillRect(0, 372 * u, size, size - 372 * u, GRASS, 1);
+  r.fillRect(0, 372 * u, size, 5 * u, TRIM, 0.9);
+
+  // Ellie, mid-jump. The gap under her feet is the point of the pose: landed
+  // reads as a mascot, airborne reads as a game about jumping.
+  const px = 186 * u;
   const py = 196 * u;
-  const pw = 96 * u;
-  const ph = 134 * u;
-  r.fillRect(px - 18 * u, py - 18 * u, pw + 36 * u, ph + 36 * u, PLAYER, 0.16);
-  r.fillRect(px - 9 * u, py - 9 * u, pw + 18 * u, ph + 18 * u, PLAYER, 0.32);
-  r.fillRect(px, py, pw, ph, PLAYER, 1);
-  r.fillRect(px + 16 * u, py + 22 * u, pw - 32 * u, ph - 58 * u, PLAYER_CORE, 1);
-  // Visor, so the figure reads as facing right — the direction of travel.
-  r.fillRect(px + pw - 40 * u, py + 34 * u, 24 * u, 16 * u, SKY_BOTTOM, 1);
+  const pw = 140 * u;
 
-  // Shot streaking away, which is what makes it read as this game and not just
-  // a generic runner. Kept tight and bright; a long faint glow over a dark
-  // background just turns muddy brown.
-  r.fillRect(px + pw + 14 * u, py + 54 * u, 156 * u, 18 * u, SHOT, 0.16);
-  r.fillRect(px + pw + 34 * u, py + 58 * u, 136 * u, 12 * u, SHOT, 1);
-  r.fillRect(px + pw + 60 * u, py + 61 * u, 92 * u, 5 * u, SHOT_CORE, 1);
+  // Hair streaming behind her. Overlaps the head block so it reads as one mass
+  // rather than a brown rectangle floating alongside her.
+  r.fillRect(px - 18 * u, py + 18 * u, 58 * u, 96 * u, HAIR, 1);
 
-  // Landing shadow under the player, which sells the height of the jump.
-  r.fillRect(px + 10 * u, 368 * u, pw - 20 * u, 5 * u, PLAYER, 0.4);
+  // Legs.
+  r.fillRect(px + 34 * u, py + 118 * u, 30 * u, 44 * u, SKIN, 1);
+  r.fillRect(px + 76 * u, py + 126 * u, 30 * u, 36 * u, SKIN, 1);
+
+  // Dress: narrow bodice, wide hem, white trim like the real one.
+  r.fillRect(px + 30 * u, py + 62 * u, 76 * u, 44 * u, DRESS, 1);
+  r.fillRect(px + 12 * u, py + 100 * u, 116 * u, 32 * u, DRESS, 1);
+  r.fillRect(px + 12 * u, py + 126 * u, 116 * u, 12 * u, TRIM, 1);
+  r.fillRect(px + 42 * u, py + 62 * u, 14 * u, 40 * u, TRIM, 1);
+
+  // Head and hair.
+  r.fillRect(px + 36 * u, py + 6 * u, 66 * u, 62 * u, SKIN, 1);
+  r.fillRect(px + 28 * u, py - 8 * u, 82 * u, 30 * u, HAIR, 1);
+  r.fillRect(px + 28 * u, py + 14 * u, 22 * u, 46 * u, HAIR, 1);
+  r.fillRect(px + 76 * u, py + 30 * u, 14 * u, 12 * u, [58, 43, 34], 1);
+
+  // Shadow on the grass, which sells the height of the jump.
+  r.fillRect(px + 20 * u, 366 * u, 100 * u, 8 * u, [40, 110, 60], 0.35);
 
   return r;
 }

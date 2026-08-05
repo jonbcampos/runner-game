@@ -16,8 +16,8 @@
  * time the icon exists the game is already fully cached.
  */
 
-const VERSION = 'v1';
-const CACHE = `three-verbs-${VERSION}`;
+const VERSION = 'v2';
+const CACHE = `ellies-rainbow-run-${VERSION}`;
 
 // The shell has stable, known names, so it can be cached up front.
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];

@@ -1,15 +1,15 @@
 {
-  "name": "Three Verbs",
-  "short_name": "3 Verbs",
-  "description": "An auto-runner with exactly three moves: jump, shoot, slide.",
+  "name": "Ellie's Rainbow Run",
+  "short_name": "Rainbow Run",
+  "description": "Run, jump, shoot and slide through a rainbow world.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "orientation": "landscape",
-  "background_color": "#05060f",
-  "theme_color": "#05060f",
+  "background_color": "#7fc7ff",
+  "theme_color": "#7fc7ff",
   "categories": ["games"],
   "icons": [
     {

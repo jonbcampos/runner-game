@@ -1,6 +1,7 @@
 import { DIFFICULTIES, VIRTUAL_H, SCREEN, type DifficultyId } from '../game/config';
 import type { GameState } from '../game/state';
 import { PALETTE, alpha } from '../render/palette';
+import { activeTheme } from '../render/theme';
 import { drawText } from './text';
 
 export interface MenuRect {
@@ -66,6 +67,11 @@ export function muteButton(): { x: number; y: number; w: number; h: number } {
   return { x: 10, y: VIRTUAL_H - 26, w: 62, h: 18 };
 }
 
+/** Theme cycler, bottom-right of the title screen. */
+export function themeButton(): { x: number; y: number; w: number; h: number } {
+  return { x: SCREEN.w - 82, y: VIRTUAL_H - 26, w: 72, h: 18 };
+}
+
 /**
  * Mirror of the audio mute flag, for drawing.
  *
@@ -100,16 +106,22 @@ export function drawScreens(ctx: CanvasRenderingContext2D, state: GameState): vo
 }
 
 function drawTitle(ctx: CanvasRenderingContext2D, state: GameState): void {
-  ctx.fillStyle = alpha(PALETTE.skyTop, 0.72);
+  ctx.fillStyle = alpha(PALETTE.scrim, 0.62);
   ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
-  drawText(ctx, 'THREE VERBS', SCREEN.w / 2, 44, {
+  drawText(ctx, "ELLIE'S", SCREEN.w / 2, 30, {
+    size: 14,
+    color: PALETTE.hudAccent,
+    align: 'center',
+    glow: true,
+  });
+  drawText(ctx, 'RAINBOW RUN', SCREEN.w / 2, 52, {
     size: 26,
     color: PALETTE.player,
     align: 'center',
     glow: true,
   });
-  drawText(ctx, 'JUMP  ·  SHOOT  ·  SLIDE', SCREEN.w / 2, 64, {
+  drawText(ctx, 'JUMP  ·  SHOOT  ·  SLIDE', SCREEN.w / 2, 70, {
     size: 9,
     color: PALETTE.hudDim,
     align: 'center',
@@ -143,6 +155,16 @@ function drawTitle(ctx: CanvasRenderingContext2D, state: GameState): void {
     },
   );
 
+  const theme = themeButton();
+  ctx.strokeStyle = alpha(PALETTE.hudDim, 0.7);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(theme.x + 0.5, theme.y + 0.5, theme.w - 1, theme.h - 1);
+  drawText(ctx, activeTheme().label, theme.x + theme.w / 2, theme.y + theme.h / 2, {
+    size: 8,
+    color: PALETTE.hudAccent,
+    align: 'center',
+  });
+
   // In portrait the game is drawn sideways to fill the screen, which only makes
   // sense once you turn the phone. Say so, and say which way — the rotation
   // direction is fixed, so guessing wrong means playing upside down.
@@ -157,7 +179,7 @@ function drawTitle(ctx: CanvasRenderingContext2D, state: GameState): void {
 }
 
 function drawGameOver(ctx: CanvasRenderingContext2D, state: GameState): void {
-  ctx.fillStyle = alpha(PALETTE.skyTop, 0.78);
+  ctx.fillStyle = alpha(PALETTE.scrim, 0.72);
   ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
   const isBest = state.metres >= state.best && state.metres > 0;
@@ -170,7 +192,7 @@ function drawGameOver(ctx: CanvasRenderingContext2D, state: GameState): void {
   });
   drawText(ctx, `${state.metres}m`, SCREEN.w / 2, VIRTUAL_H / 2 - 14, {
     size: 30,
-    color: PALETTE.hudText,
+    color: '#ffffff',
     align: 'center',
     glow: true,
   });
@@ -201,7 +223,7 @@ function drawMenuButton(ctx: CanvasRenderingContext2D, rect: MenuRect, color: st
   const hasSub = Boolean(rect.sub);
   drawText(ctx, rect.label, rect.x + rect.w / 2, rect.y + rect.h / 2 - (hasSub ? 4 : 0), {
     size: 12,
-    color: PALETTE.hudText,
+    color: '#ffffff',
     align: 'center',
   });
   if (rect.sub) {

@@ -4,12 +4,22 @@ import { startLoop } from './core/loop';
 import { Viewport } from './core/viewport';
 import { PLAYER_X, type DifficultyId } from './game/config';
 import { GameState, validateDesignContracts, type GameEvent } from './game/state';
-import { neonRenderer } from './render/neon';
+import { neonTheme } from './render/neon';
+import { sceneRenderer } from './render/scene';
+import { initTheme, nextTheme, registerTheme } from './render/theme';
+import { unicornTheme } from './render/unicorn';
 import { Particles } from './render/particles';
-import { gameOverMenu, hitTestMenu, muteButton, setMutedDisplay, titleMenu } from './ui/screens';
+import {
+  gameOverMenu,
+  hitTestMenu,
+  muteButton,
+  setMutedDisplay,
+  themeButton,
+  titleMenu,
+} from './ui/screens';
 
-const BEST_KEY = 'three-verbs.best';
-const DIFFICULTY_KEY = 'three-verbs.difficulty';
+const BEST_KEY = 'ellies-rainbow-run.best';
+const DIFFICULTY_KEY = 'ellies-rainbow-run.difficulty';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement | null;
 if (!canvas) throw new Error('#game canvas missing');
@@ -17,7 +27,13 @@ if (!canvas) throw new Error('#game canvas missing');
 const viewport = new Viewport(canvas);
 const input = new Input(viewport);
 const state = new GameState();
-const renderer = neonRenderer;
+const renderer = sceneRenderer;
+
+// Rainbow first: it's the default this game is named after. Neon stays as a
+// second theme rather than being replaced — see decision 36.
+registerTheme(unicornTheme);
+registerTheme(neonTheme);
+initTheme(unicornTheme.id);
 const particles = new Particles();
 const audio = new Audio();
 setMutedDisplay(audio.muted);
@@ -43,6 +59,13 @@ function routeMenus(): void {
   if (!tap) return;
 
   if (state.phase === 'title') {
+    const themeBtn = themeButton();
+    if (tap.x >= themeBtn.x - 8 && tap.x <= themeBtn.x + themeBtn.w + 8 &&
+        tap.y >= themeBtn.y - 8 && tap.y <= themeBtn.y + themeBtn.h + 8) {
+      nextTheme();
+      audio.play('select');
+      return;
+    }
     const mute = muteButton();
     if (tap.x >= mute.x - 8 && tap.x <= mute.x + mute.w + 8 &&
         tap.y >= mute.y - 8 && tap.y <= mute.y + mute.h + 8) {

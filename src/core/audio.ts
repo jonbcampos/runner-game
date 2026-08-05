@@ -23,7 +23,7 @@ export type Sfx =
   | 'sector'
   | 'select';
 
-const MUTE_KEY = 'three-verbs.muted';
+const MUTE_KEY = 'ellies-rainbow-run.muted';
 
 export class Audio {
   private ctx: AudioContext | null = null;

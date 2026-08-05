@@ -1,8 +1,59 @@
 /**
- * The neon palette. One place, so the planned 16-bit pixel renderer can be
- * added later as a sibling file without touching anything in src/game/.
+ * The colour set the whole game draws with.
+ *
+ * `PALETTE` is deliberately a *mutable* object rather than a frozen constant:
+ * switching theme swaps its contents in place, so every module that already
+ * reads `PALETTE.spike` keeps working without knowing themes exist. The
+ * alternative — threading a palette argument through every draw call and every
+ * UI module — is a lot of plumbing for no benefit, since exactly one palette is
+ * ever active at a time.
  */
-export const PALETTE = {
+export interface Palette {
+  skyTop: string;
+  skyBottom: string;
+
+  farGrid: string;
+  midStructure: string;
+  nearStructure: string;
+
+  ground: string;
+  groundLine: string;
+
+  player: string;
+  playerCore: string;
+  playerDim: string;
+
+  shot: string;
+  shotCore: string;
+
+  spike: string;
+  beam: string;
+  drone: string;
+  droneShield: string;
+  /** Armour tier colours, indexed by hit points. See decision 28. */
+  droneTier: Record<number, string>;
+
+  hudText: string;
+  hudDim: string;
+  hudAccent: string;
+
+  buttonIdle: string;
+  buttonEdge: string;
+  buttonActive: string;
+
+  /**
+   * Colour laid over the world behind menus.
+   *
+   * Its own entry rather than reusing the sky, because the sky is the wrong
+   * colour on a light theme: tinting a daylight scene with pale blue washes it
+   * out instead of pushing it back, and the menu ends up competing with the
+   * background rather than sitting in front of it. A scrim always has to be
+   * darker than what it covers.
+   */
+  scrim: string;
+}
+
+export const NEON_PALETTE: Palette = {
   skyTop: '#05060f',
   skyBottom: '#0d1230',
 
@@ -22,23 +73,9 @@ export const PALETTE = {
 
   spike: '#ff4d9d',
   beam: '#c86bff',
-  drone: '#ff6b4d',
+  drone: '#ff8a4d',
   droneShield: '#ff9d6b',
-
-  /**
-   * Armour tiers, indexed by hit points.
-   *
-   * A heat ramp — the tougher it is, the hotter it burns — so the ordering is
-   * guessable rather than memorised. Deliberately kept clear of the spike pink
-   * and beam purple, since confusing a drone for either would mean answering
-   * with the wrong verb entirely.
-   */
-  droneTier: {
-    2: '#ff8a4d',
-    3: '#ff5a2b',
-    4: '#ff2f1f',
-    5: '#ffe9e0',
-  } as Record<number, string>,
+  droneTier: { 2: '#ff8a4d', 3: '#ff5a2b', 4: '#ff2f1f', 5: '#ffe9e0' },
 
   hudText: '#dfe8ff',
   hudDim: '#5a6798',
@@ -47,7 +84,60 @@ export const PALETTE = {
   buttonIdle: '#28315e',
   buttonEdge: '#4a5aa8',
   buttonActive: '#4de2ff',
-} as const;
+  scrim: '#05060f',
+};
+
+/**
+ * Bright daylight counterpart. Same structural roles, entirely different mood.
+ *
+ * The hazard colours still have to be mutually unmistakable — confusing a
+ * bramble for a rainbow means answering with the wrong verb — so they stay far
+ * apart in hue even though the whole set is much softer.
+ */
+export const UNICORN_PALETTE: Palette = {
+  skyTop: '#7fc7ff',
+  skyBottom: '#ffd9ee',
+
+  farGrid: '#cfe9ff',
+  midStructure: '#a8dcae',
+  nearStructure: '#79c78a',
+
+  ground: '#57ad68',
+  groundLine: '#fff6d8',
+
+  player: '#ff7eb3',
+  playerCore: '#fff3f8',
+  playerDim: '#c2648c',
+
+  shot: '#fff06a',
+  shotCore: '#ffffff',
+
+  spike: '#3f7a36',
+  beam: '#ff4f9c',
+  drone: '#8b98b4',
+  droneShield: '#c3cfe2',
+  droneTier: { 2: '#b3bfd4', 3: '#8b98b4', 4: '#626d88', 5: '#3f475e' },
+
+  hudText: '#43305a',
+  hudDim: '#9a86ad',
+  hudAccent: '#ff4f9c',
+
+  buttonIdle: '#ffffff',
+  buttonEdge: '#ff9ec7',
+  buttonActive: '#ff4f9c',
+  scrim: '#3a2450',
+};
+
+/** The live palette. Mutated in place by the theme switcher. */
+export const PALETTE: Palette = {
+  ...NEON_PALETTE,
+  droneTier: { ...NEON_PALETTE.droneTier },
+};
+
+export function applyPalette(next: Palette): void {
+  Object.assign(PALETTE, next);
+  PALETTE.droneTier = { ...next.droneTier };
+}
 
 /** rgba() helper for the glow passes. */
 export function alpha(hex: string, a: number): string {
