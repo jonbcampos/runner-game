@@ -1,3 +1,4 @@
+import { updateEnvironment } from './environment';
 import type { Renderer } from './renderer';
 import { activeTheme } from './theme';
 import { drawHud } from '../ui/hud';
@@ -16,6 +17,15 @@ import { drawTouchpad } from '../ui/touchpad';
 export const sceneRenderer: Renderer = {
   draw(ctx, state, input, interpolation, particles) {
     const theme = activeTheme();
+
+    // Advance the time-of-day cycle before anything draws. It writes the world
+    // colours into the live palette, so it has to happen ahead of the first
+    // read of PALETTE.skyTop — which is the very first thing a background does.
+    // The title screen sits at t=0 so the theme is shown at its most
+    // recognisable rather than at whatever hour the last run ended at. The
+    // game-over screen deliberately does *not* reset — snapping back to dawn
+    // the instant you die would undo the run in front of you.
+    updateEnvironment(theme.environments, state.phase === 'title' ? 0 : state.elapsed);
 
     ctx.save();
 

@@ -1,4 +1,6 @@
 import { GROUND_Y, VIRTUAL_H, SCREEN } from '../game/config';
+import { environment } from './environment';
+import { drawFireworks } from './fireworks';
 import { PALETTE, alpha } from './palette';
 
 /**
@@ -12,7 +14,11 @@ import { PALETTE, alpha } from './palette';
  * Everything is drawn procedurally from the scroll distance — there's no state
  * to update and nothing to allocate per frame.
  */
-export function drawBackground(ctx: CanvasRenderingContext2D, distance: number): void {
+export function drawBackground(
+  ctx: CanvasRenderingContext2D,
+  distance: number,
+  elapsed: number,
+): void {
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
   sky.addColorStop(0, PALETTE.skyTop);
   sky.addColorStop(1, PALETTE.skyBottom);
@@ -20,6 +26,7 @@ export function drawBackground(ctx: CanvasRenderingContext2D, distance: number):
   ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
   drawStars(ctx, distance * 0.05);
+  drawFireworks(ctx, elapsed, environment().fireworks);
   drawSkyline(ctx, distance * 0.18, 0.55, PALETTE.farGrid, 34, 78);
   drawSkyline(ctx, distance * 0.38, 0.75, PALETTE.midStructure, 52, 58);
   drawGroundGrid(ctx, distance);

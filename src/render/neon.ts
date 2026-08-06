@@ -3,6 +3,7 @@ import { POWERUP_DEFS } from '../game/powerups';
 import type { Aabb } from '../game/collision';
 import type { Obstacle } from '../game/obstacles';
 import type { GameState } from '../game/state';
+import type { Environment } from './environment';
 import { drawBackground } from './parallax';
 import { NEON_PALETTE, PALETTE, alpha } from './palette';
 import type { Theme } from './theme';
@@ -10,12 +11,85 @@ import { drawText } from '../ui/text';
 
 const scratch: Aabb = { x: 0, y: 0, w: 0, h: 0 };
 
+/**
+ * A night in the neon city, one environment per sector, looping.
+ *
+ * The city is already nocturnal, so this is a run through the small hours
+ * rather than a day: the sky deepens, the grid shifts hue, and it comes back
+ * around to a cold pre-dawn. Colour-only — the neon theme's parallax draws
+ * straight from the palette, so it needed no changes at all to pick this up,
+ * which is the whole argument for the environment cycle living in the palette.
+ *
+ * DEEP NIGHT gets the fireworks, same as the rainbow theme's. They read as
+ * distant flares over the skyline, which is if anything a better fit.
+ */
+const ENVIRONMENTS: readonly Environment[] = [
+  {
+    id: 'dusk',
+    label: 'DUSK',
+    skyTop: '#0f0a26',
+    skyBottom: '#38184a',
+    farGrid: '#2a1c52',
+    midStructure: '#3a2464',
+    nearStructure: '#4a2f80',
+    ground: '#150c2c',
+    groundLine: '#ff7ad9',
+    darkness: 0.6,
+    sunY: null,
+    moonY: null,
+  },
+  {
+    id: 'midnight',
+    label: 'MIDNIGHT',
+    skyTop: '#05060f',
+    skyBottom: '#0d1230',
+    farGrid: '#141a45',
+    midStructure: '#1b2358',
+    nearStructure: '#252f78',
+    ground: '#0a0d24',
+    groundLine: '#3ad9ff',
+    darkness: 1,
+    sunY: null,
+    moonY: null,
+  },
+  {
+    id: 'deep',
+    label: 'DEEP NIGHT',
+    skyTop: '#02040a',
+    skyBottom: '#07142c',
+    farGrid: '#0d2440',
+    midStructure: '#123454',
+    nearStructure: '#17486e',
+    ground: '#040a18',
+    groundLine: '#5affd0',
+    darkness: 1,
+    sunY: null,
+    moonY: null,
+    fireworks: true,
+  },
+  {
+    id: 'predawn',
+    label: 'PRE-DAWN',
+    skyTop: '#0a1436',
+    skyBottom: '#2e3a72',
+    farGrid: '#25355f',
+    midStructure: '#33477a',
+    nearStructure: '#465f9c',
+    ground: '#101a3a',
+    groundLine: '#ffd166',
+    darkness: 0.75,
+    sunY: null,
+    moonY: null,
+  },
+];
+
 /** The original look: glowing geometry on a dark scrolling city. */
 export const neonTheme: Theme = {
   id: 'neon',
   label: 'NEON',
   palette: NEON_PALETTE,
-  background: (ctx, state) => drawBackground(ctx, state.distance),
+  environments: ENVIRONMENTS,
+  background: (ctx, state) => drawBackground(ctx, state.distance, state.elapsed),
   boss: drawBoss,
   obstacles: drawObstacles,
   pickups: drawPickups,

@@ -1,6 +1,7 @@
 import { SCREEN, VIRTUAL_H } from '../game/config';
 import type { GameState } from '../game/state';
 import { POWERUP_DEFS } from '../game/powerups';
+import { environment } from '../render/environment';
 import { PALETTE, alpha } from '../render/palette';
 import { drawText } from './text';
 
@@ -162,7 +163,9 @@ function drawSectorAnnouncement(ctx: CanvasRenderingContext2D, state: GameState)
     align: 'center',
     glow: true,
   });
-  drawText(ctx, 'FASTER', SCREEN.w / 2, VIRTUAL_H / 2 - 10, {
+  // Name the time of day alongside the sector, so the sky changing reads as
+  // something the game did rather than something that just happened.
+  drawText(ctx, `FASTER  ·  ${environment().label}`, SCREEN.w / 2, VIRTUAL_H / 2 - 10, {
     size: 9,
     color: PALETTE.hudDim,
     align: 'center',

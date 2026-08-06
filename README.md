@@ -79,4 +79,5 @@ dimensions stop enforcing its verb (a drone you could jump over, a beam you coul
 Playable and deployed: https://jonbcampos.github.io/runner-game/
 
 Core loop, authored pattern director, boss fights, seven powerups, drone armour tiers, two themes,
-installable PWA with offline play. 70 automated design-contract checks.
+a day/night cycle with fireworks, installable PWA with offline play. 70 automated design-contract
+checks.

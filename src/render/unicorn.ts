@@ -3,6 +3,8 @@ import type { Aabb } from '../game/collision';
 import type { Obstacle } from '../game/obstacles';
 import { POWERUP_DEFS } from '../game/powerups';
 import type { GameState } from '../game/state';
+import { environment, type Environment } from './environment';
+import { drawFireworks } from './fireworks';
 import { PALETTE, UNICORN_PALETTE, alpha } from './palette';
 import type { Theme } from './theme';
 
@@ -31,25 +33,163 @@ import type { Theme } from './theme';
 
 const scratch: Aabb = { x: 0, y: 0, w: 0, h: 0 };
 
+// --- environments -----------------------------------------------------------
+
+/**
+ * A day in Ellie's world, one environment per sector, looping.
+ *
+ * The order is the obvious one — and being obvious is the point. Progression
+ * you have to be told about isn't progression; a player should know they've
+ * been running a while because the sun went down.
+ *
+ * The ground stays comfortably lighter than the sky at every hour, because the
+ * ground line is where the whole game is read. A gorgeous near-black night
+ * would have cost more than it gave.
+ */
+const ENVIRONMENTS: readonly Environment[] = [
+  {
+    id: 'dawn',
+    label: 'SUNRISE',
+    skyTop: '#8f7fc4',
+    skyBottom: '#ffcf9b',
+    farGrid: '#d8c4e8',
+    midStructure: '#8fbf9b',
+    nearStructure: '#63a274',
+    ground: '#4f9d63',
+    groundLine: '#ffe6c0',
+    darkness: 0.25,
+    sunY: GROUND_Y - 26,
+    moonY: null,
+  },
+  {
+    id: 'day',
+    label: 'MORNING',
+    skyTop: '#7fc7ff',
+    skyBottom: '#ffd9ee',
+    farGrid: '#cfe9ff',
+    midStructure: '#a8dcae',
+    nearStructure: '#79c78a',
+    ground: '#57ad68',
+    groundLine: '#fff6d8',
+    darkness: 0,
+    sunY: 40,
+    moonY: null,
+  },
+  {
+    id: 'dusk',
+    label: 'SUNSET',
+    skyTop: '#4a3a7d',
+    skyBottom: '#ff8a5c',
+    farGrid: '#9a7aa8',
+    midStructure: '#5f8468',
+    nearStructure: '#436a4f',
+    ground: '#3a7048',
+    groundLine: '#ffd6a0',
+    darkness: 0.55,
+    sunY: GROUND_Y - 20,
+    moonY: null,
+  },
+  {
+    id: 'night',
+    label: 'NIGHT',
+    skyTop: '#111a44',
+    skyBottom: '#3b2a63',
+    farGrid: '#2b3a6b',
+    midStructure: '#2f5361',
+    nearStructure: '#234352',
+    ground: '#265846',
+    groundLine: '#bfe0ff',
+    darkness: 1,
+    sunY: null,
+    moonY: 38,
+    fireworks: true,
+  },
+];
+
 // --- background -------------------------------------------------------------
 
 function drawBackground(ctx: CanvasRenderingContext2D, distance: number, elapsed: number): void {
+  const env = environment();
+
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
   sky.addColorStop(0, PALETTE.skyTop);
   sky.addColorStop(1, PALETTE.skyBottom);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, SCREEN.w, VIRTUAL_H);
 
-  drawRainbowArc(ctx, distance * 0.06);
-  drawClouds(ctx, distance * 0.14, 34, 0.55);
+  drawStars(ctx, distance, env.darkness);
+  drawSun(ctx, env.sunY, env.sunAlpha, env.darkness);
+  drawMoon(ctx, env.moonY, env.moonAlpha);
+  // Behind the clouds, so a firework can be partly hidden by one — which is
+  // what makes them read as far away rather than as something in the lane.
+  drawFireworks(ctx, elapsed, env.fireworks);
+  drawRainbowArc(ctx, distance * 0.06, env.darkness);
+  drawClouds(ctx, distance * 0.14, 34, 0.55 - env.darkness * 0.3);
   drawHills(ctx, distance * 0.3, PALETTE.midStructure, 46, 30);
-  drawButterflies(ctx, distance, elapsed);
+  drawButterflies(ctx, distance, elapsed, env.darkness);
   drawHills(ctx, distance * 0.55, PALETTE.nearStructure, 62, 18);
-  drawMeadow(ctx, distance);
+  drawMeadow(ctx, distance, env.darkness);
+}
+
+/** Stars, fading in as the sky darkens. Deterministic; nothing allocates. */
+function drawStars(ctx: CanvasRenderingContext2D, distance: number, darkness: number): void {
+  if (darkness < 0.12) return;
+  const offset = distance * 0.04;
+  const span = SCREEN.w * 2;
+  for (let i = 0; i < 54; i++) {
+    const seed = i * 2654435761;
+    const y = 6 + ((seed >>> 3) % 130);
+    const x = (((((seed >>> 8) % span) - offset) % span) + span) % span;
+    if (x > SCREEN.w) continue;
+    // Twinkle by index rather than by time, so it shimmers without flickering.
+    const bright = 0.35 + ((seed >>> 17) % 60) / 100;
+    ctx.fillStyle = alpha('#ffffff', bright * (darkness - 0.12) * 1.2);
+    ctx.fillRect(Math.floor(x), y, 1, 1);
+  }
+}
+
+function drawSun(
+  ctx: CanvasRenderingContext2D,
+  y: number,
+  opacity: number,
+  darkness: number,
+): void {
+  if (opacity <= 0.02) return;
+  const x = SCREEN.w * 0.78;
+  // Warm and swollen near the horizon, small and white overhead — the cheapest
+  // possible cue for what time it is.
+  const low = Math.max(0, Math.min(1, darkness * 1.6));
+  const r = 12 + low * 9;
+  ctx.fillStyle = alpha(low > 0.4 ? '#ff9a5c' : '#fff6c8', 0.22 * opacity);
+  ctx.beginPath();
+  ctx.arc(x, y, r + 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = alpha(low > 0.4 ? '#ffc46b' : '#fffbe8', 0.95 * opacity);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawMoon(ctx: CanvasRenderingContext2D, y: number, opacity: number): void {
+  if (opacity <= 0.02) return;
+  const x = SCREEN.w * 0.8;
+  ctx.fillStyle = alpha('#e8f0ff', 0.16 * opacity);
+  ctx.beginPath();
+  ctx.arc(x, y, 21, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = alpha('#f4f8ff', 0.95 * opacity);
+  ctx.beginPath();
+  ctx.arc(x, y, 12, 0, Math.PI * 2);
+  ctx.fill();
+  // Craters, so it isn't just a white dot.
+  ctx.fillStyle = alpha('#cdd8ee', 0.9 * opacity);
+  ctx.fillRect(x - 5, y - 4, 3, 3);
+  ctx.fillRect(x + 2, y + 1, 4, 3);
+  ctx.fillRect(x - 2, y + 5, 2, 2);
 }
 
 /** A big arc across the sky. Purely scenery — the hazard rainbow is pink and low. */
-function drawRainbowArc(ctx: CanvasRenderingContext2D, offset: number): void {
+function drawRainbowArc(ctx: CanvasRenderingContext2D, offset: number, darkness: number): void {
   const bands = ['#ff8fae', '#ffc46b', '#fff06a', '#8fe08f', '#7fc7ff', '#c79bff'];
   const cx = SCREEN.w * 0.62 - (offset % (SCREEN.w * 3));
   const cy = GROUND_Y + 40;
@@ -57,7 +197,13 @@ function drawRainbowArc(ctx: CanvasRenderingContext2D, offset: number): void {
   // Deliberately faint. The hazard rainbow is small, saturated and low; this
   // one must never be mistaken for something you have to duck under.
   ctx.save();
-  ctx.globalAlpha = 0.28;
+  // Faint by day, gone by night — a rainbow with no sun is a puzzle the eye
+  // spends time on, and there's nothing to work out.
+  ctx.globalAlpha = 0.28 * (1 - darkness);
+  if (ctx.globalAlpha < 0.02) {
+    ctx.restore();
+    return;
+  }
   ctx.lineWidth = 7;
   bands.forEach((colour, i) => {
     ctx.strokeStyle = colour;
@@ -129,7 +275,12 @@ function drawHills(
  * are three pixels across, wrong shape for every hazard family, and partly
  * occluded by the near hills, so they can't be read as anything to answer.
  */
-function drawButterflies(ctx: CanvasRenderingContext2D, distance: number, elapsed: number): void {
+function drawButterflies(
+  ctx: CanvasRenderingContext2D,
+  distance: number,
+  elapsed: number,
+  darkness: number,
+): void {
   const spacing = 118;
   const offset = distance * 0.42;
   const start = Math.floor(offset / spacing) * spacing;
@@ -140,11 +291,24 @@ function drawButterflies(ctx: CanvasRenderingContext2D, distance: number, elapse
 
     const seed = Math.abs(Math.floor(worldX / spacing)) * 2654435761;
     const y = GROUND_Y - 34 - ((seed >>> 4) % 40) + Math.sin(elapsed * 3 + i) * 5;
+    // After dark they're fireflies: same drift, one warm colour, and a glow
+    // instead of wings. Cheaper than a second system and it reads instantly.
+    const night = darkness > 0.55;
     const colours = ['#fff06a', '#ff8fae', '#c79bff', '#ffffff'];
+    const colour = night ? '#fff2a0' : colours[(seed >>> 9) % colours.length]!;
+
+    if (night) {
+      const pulse = 0.35 + Math.abs(Math.sin(elapsed * 2.3 + i * 1.7)) * 0.65;
+      ctx.fillStyle = alpha(colour, 0.22 * pulse);
+      ctx.fillRect(Math.round(x) - 2, Math.round(y) - 2, 8, 7);
+      ctx.fillStyle = alpha(colour, 0.95 * pulse);
+      ctx.fillRect(Math.round(x) + 1, Math.round(y), 2, 2);
+      continue;
+    }
+
     // Wings flap by alternating which side is extended.
     const flap = Math.floor(elapsed * 11 + i) % 2;
-
-    ctx.fillStyle = alpha(colours[(seed >>> 9) % colours.length]!, 0.85);
+    ctx.fillStyle = alpha(colour, 0.85);
     ctx.fillRect(Math.round(x), Math.round(y - flap), 2, 3);
     ctx.fillRect(Math.round(x) + 3, Math.round(y - 1 + flap), 2, 3);
     ctx.fillStyle = alpha('#5a4470', 0.7);
@@ -153,7 +317,7 @@ function drawButterflies(ctx: CanvasRenderingContext2D, distance: number, elapse
 }
 
 /** Ground plane: grass with a bright lip and scattered flowers. */
-function drawMeadow(ctx: CanvasRenderingContext2D, distance: number): void {
+function drawMeadow(ctx: CanvasRenderingContext2D, distance: number, darkness: number): void {
   ctx.fillStyle = PALETTE.ground;
   ctx.fillRect(0, GROUND_Y, SCREEN.w, VIRTUAL_H - GROUND_Y);
 
@@ -168,7 +332,7 @@ function drawMeadow(ctx: CanvasRenderingContext2D, distance: number): void {
     const seed = Math.abs(Math.floor((distance - offset) / spacing) + i) * 2246822519;
     const y = GROUND_Y + 8 + ((seed >>> 6) % (VIRTUAL_H - GROUND_Y - 14));
     const colours = ['#fff06a', '#ffffff', '#ff8fae', '#c79bff'];
-    ctx.fillStyle = alpha(colours[(seed >>> 11) % colours.length]!, 0.75);
+    ctx.fillStyle = alpha(colours[(seed >>> 11) % colours.length]!, 0.75 - darkness * 0.45);
     ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
     ctx.fillRect(Math.round(x) - 2, Math.round(y) + 2, 2, 2);
     ctx.fillRect(Math.round(x) + 2, Math.round(y) + 2, 2, 2);
@@ -444,7 +608,14 @@ function drawRainCloud(
   ctx.fillRect(x + 4, columnY, item.w - 8, columnH);
 
   // Hard rails down both edges, so the column has a definite silhouette.
-  ctx.fillStyle = alpha('#3f475e', 0.9);
+  //
+  // Their colour follows the time of day. The heavy armour tiers are dark grey
+  // by design, and a dark grey cloud outlined in darker grey against a midnight
+  // sky is the one hazard the day/night cycle could genuinely have erased —
+  // the shoot-it hazard being the one that vanishes is not a trade worth
+  // making for a prettier sky.
+  const rim = environment().darkness > 0.45 ? '#dfe9ff' : '#3f475e';
+  ctx.fillStyle = alpha(rim, 0.9);
   ctx.fillRect(x + 3, columnY, 2, columnH);
   ctx.fillRect(x + item.w - 5, columnY, 2, columnH);
 
@@ -455,6 +626,10 @@ function drawRainCloud(
     ctx.fillRect(dropX, dropY, 2, 6);
   }
 
+  // Backing puff in the rim colour, one pixel proud all round: an outline that
+  // keeps the cloud's shape legible whatever the sky is doing behind it.
+  ctx.fillStyle = alpha(rim, 0.85);
+  puff(ctx, x - 3, item.y - 1, item.w + 6);
   ctx.fillStyle = flashing ? '#ffffff' : tint;
   puff(ctx, x - 2, item.y, item.w + 4);
 
@@ -585,6 +760,7 @@ export const unicornTheme: Theme = {
   id: 'unicorn',
   label: 'RAINBOW',
   palette: UNICORN_PALETTE,
+  environments: ENVIRONMENTS,
   background: (ctx, state) => drawBackground(ctx, state.distance, state.elapsed),
   boss: drawBoss,
   obstacles: drawObstacles,

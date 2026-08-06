@@ -715,3 +715,58 @@ asserts a boss fight actually happened, so the test can't pass by never reaching
 
 The difficulty buttons now show their verbs ("3 HP · JUMP FIRE"), because which mode is simpler is
 otherwise invisible until you've already started playing.
+
+---
+
+## 40. A day/night cycle, because a long run looked like a short one
+
+**Decided:** the world moves through four environments — one per sector, looping — and each theme
+declares its own list. RAINBOW runs SUNRISE → MORNING → SUNSET → NIGHT; NEON runs a night in the
+city, DUSK → MIDNIGHT → DEEP NIGHT → PRE-DAWN.
+
+**Why:** Ellie likes the game but it "looks repetitive very quickly". That's a fair diagnosis of a
+real gap: escalation was entirely in the numbers — faster, denser, heavier armour — and none of it
+in the frame. A run at three minutes looked identical to a run at ten seconds, so length didn't
+feel like progress, it felt like repetition.
+
+**Where it lives, and why that's the whole trick:** an environment is just the *world* half of the
+palette — sky, parallax layers, ground — and the cycle blends between them and writes the result
+into the live `PALETTE` each frame. Both existing themes already drew their backgrounds from
+exactly those entries, so **neither theme's background code needed to change to become day/night
+aware**, and the neon theme got a full cycle from a colour table alone. A future theme gets it by
+declaring a list.
+
+**What it never touches: hazard, HUD and button colours.** A cycle that could recolour a hazard
+could make one unreadable at one time of day and fine at another — a bug that only reproduces four
+minutes into a run, which is close to the worst debugging experience this codebase could offer.
+Hazards look the same at midnight as at noon.
+
+**The one thing night genuinely broke, and the fix:** the heavy drone armour tiers are dark grey by
+design, and a dark grey cloud against a midnight sky nearly vanished — the *shoot-it* hazard being
+the one that disappears is not a trade worth making for a prettier sky. Rain clouds now carry a rim
+whose colour follows `darkness`: dark by day, light at night. The night sky is also deliberately a
+deep indigo rather than black, and the ground stays lighter than the sky at every hour, because the
+ground line is where the whole game is read.
+
+Crossfades take the last 20% of each sector. A hard cut reads as a glitch, or worse, as something
+the player is supposed to react to.
+
+## 41. Fireworks
+
+**Decided:** fireworks go up during the night environment of both themes. A personal request, and a
+good one.
+
+**No state and no allocation.** Each shell's entire life is a pure function of the clock: shell `i`
+launches every `period` seconds and its position is the fractional part. No pool, no update tick
+threaded through the renderer, nothing to reset between runs, and it cannot drift out of sync with
+the simulation because it isn't simulating anything. Roughly forty lines.
+
+**The rule they obey:** they stay in the top third of the frame, well above the lane where anything
+is answered, and they fade fast. A bright thing arriving on screen is this game's entire vocabulary
+for "deal with me" — a firework that read as a hazard, or worse as a pickup worth chasing, would be
+a genuinely cruel piece of decoration. They're also drawn behind the clouds, which is what makes
+them read as distant.
+
+The first version used a square falloff and twelve sparks, and looked like a dotted ring being
+drawn on the sky rather than an explosion. A firework is *mostly bright*: it needs a flash, a
+slower fade, two rings at different radii, and a short tail on each spark so it has a direction.
