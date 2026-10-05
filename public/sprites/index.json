@@ -1,0 +1,87 @@
+{
+  "generated": [
+    "ellie.motion",
+    "unicorn.motion",
+    "cloud.motion",
+    "boss.motion",
+    "powerup.motion",
+    "pop.motion",
+    "castle",
+    "sky.day",
+    "sky.dusk",
+    "sky.night",
+    "hills",
+    "trees",
+    "ground",
+    "title"
+  ],
+  "ext": "jpg",
+  "opaque": [
+    "sky.day",
+    "sky.dusk",
+    "sky.night",
+    "ground",
+    "title"
+  ],
+  "additive": [
+    "pop.motion"
+  ],
+  "sheets": {
+    "ellie.motion": {
+      "cols": 4,
+      "rows": 3,
+      "align": "floor",
+      "rowIds": [
+        "run",
+        "act",
+        "mood"
+      ]
+    },
+    "unicorn.motion": {
+      "cols": 4,
+      "rows": 2,
+      "align": "floor",
+      "mirrored": true,
+      "rowIds": [
+        "trot",
+        "happy"
+      ]
+    },
+    "cloud.motion": {
+      "cols": 4,
+      "rows": 2,
+      "align": "center",
+      "rowIds": [
+        "grump",
+        "happy"
+      ]
+    },
+    "boss.motion": {
+      "cols": 4,
+      "rows": 2,
+      "align": "center",
+      "rowIds": [
+        "fight",
+        "end"
+      ]
+    },
+    "powerup.motion": {
+      "cols": 4,
+      "rows": 2,
+      "align": "center",
+      "rowIds": [
+        "icons",
+        "icons"
+      ]
+    },
+    "pop.motion": {
+      "cols": 4,
+      "rows": 2,
+      "align": "center",
+      "rowIds": [
+        "fx",
+        "fx"
+      ]
+    }
+  }
+}

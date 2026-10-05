@@ -1,0 +1,33 @@
+{
+  "ext": "m4a",
+  "voices": [
+    "e.letsgo",
+    "e.whee",
+    "e.yay",
+    "e.gotit",
+    "e.uhoh",
+    "e.wow",
+    "e.again",
+    "b.hello",
+    "b.hey",
+    "b.bye"
+  ],
+  "music": [
+    "music.title",
+    "music.day",
+    "music.night",
+    "music.boss"
+  ],
+  "rates": {
+    "e.letsgo": 1,
+    "e.whee": 1,
+    "e.yay": 1,
+    "e.gotit": 1,
+    "e.uhoh": 1,
+    "e.wow": 1,
+    "e.again": 1,
+    "b.hello": 1.3,
+    "b.hey": 1.3,
+    "b.bye": 1.3
+  }
+}

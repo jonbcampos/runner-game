@@ -6,6 +6,24 @@ import type { GameState } from '../game/state';
 import { environment, type Environment } from './environment';
 import { drawFireworks } from './fireworks';
 import { PALETTE, UNICORN_PALETTE, alpha } from './palette';
+import {
+  drawBossArt,
+  drawCastleArt,
+  drawCloudArt,
+  drawEllieArt,
+  drawFxArt,
+  drawGroundArt,
+  drawHailPlates,
+  drawHillsArt,
+  drawPickupArt,
+  drawSkyArt,
+  drawTreesArt,
+  drawUnicornArt,
+  prepareArt,
+  skyWeight,
+  trackCleared,
+} from './rainbow-art';
+import { spriteFrames } from './sprites';
 import type { Theme } from './theme';
 
 /**
@@ -49,6 +67,8 @@ const scratch: Aabb = { x: 0, y: 0, w: 0, h: 0 };
 const ENVIRONMENTS: readonly Environment[] = [
   {
     id: 'dawn',
+    sky: 'sky.dusk',
+    tint: '#f2d6e4',
     label: 'SUNRISE',
     skyTop: '#8f7fc4',
     skyBottom: '#ffcf9b',
@@ -63,6 +83,8 @@ const ENVIRONMENTS: readonly Environment[] = [
   },
   {
     id: 'day',
+    sky: 'sky.day',
+    tint: '#ffffff',
     label: 'MORNING',
     skyTop: '#7fc7ff',
     skyBottom: '#ffd9ee',
@@ -77,6 +99,8 @@ const ENVIRONMENTS: readonly Environment[] = [
   },
   {
     id: 'dusk',
+    sky: 'sky.dusk',
+    tint: '#e8b9a8',
     label: 'SUNSET',
     skyTop: '#4a3a7d',
     skyBottom: '#ff8a5c',
@@ -91,6 +115,8 @@ const ENVIRONMENTS: readonly Environment[] = [
   },
   {
     id: 'night',
+    sky: 'sky.night',
+    tint: '#8c96cc',
     label: 'NIGHT',
     skyTop: '#111a44',
     skyBottom: '#3b2a63',
@@ -110,6 +136,8 @@ const ENVIRONMENTS: readonly Environment[] = [
 
 function drawBackground(ctx: CanvasRenderingContext2D, distance: number, elapsed: number): void {
   const env = environment();
+  prepareArt();
+  if (drawPaintedBackground(ctx, distance, elapsed)) return;
 
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
   sky.addColorStop(0, PALETTE.skyTop);
@@ -129,6 +157,47 @@ function drawBackground(ctx: CanvasRenderingContext2D, distance: number, elapsed
   drawButterflies(ctx, distance, elapsed, env.darkness);
   drawHills(ctx, distance * 0.55, PALETTE.nearStructure, 62, 18);
   drawMeadow(ctx, distance, env.darkness);
+}
+
+/**
+ * The painted world (ART-PLAN.md): sky crossfaded with the cycle and its
+ * clouds drifting, then hills, butterflies, trees and ground at their own
+ * parallax rates. The procedural sun, moon, stars, rainbow and fireworks stay,
+ * because they're what the cycle animates. Returns false until the sky and
+ * ground art are ready, and the procedural world draws instead.
+ */
+function drawPaintedBackground(ctx: CanvasRenderingContext2D, distance: number, elapsed: number): boolean {
+  const env = environment();
+  if (!drawSkyArt(ctx, distance)) return false;
+  // Painted skies have the stars of the night, and the low sun of dusk, in
+  // them already; only the day sky needs the procedural sun.
+  drawStars(ctx, distance, env.darkness * 0.6);
+  drawSun(ctx, env.sunY, env.sunAlpha * skyWeight('sky.day'), env.darkness);
+  drawMoon(ctx, env.moonY, env.moonAlpha);
+  drawFireworks(ctx, elapsed, env.fireworks, true);
+  drawRainbowArc(ctx, distance * 0.06, env.darkness);
+  if (!drawHillsArt(ctx, distance)) drawHills(ctx, distance * 0.3, PALETTE.midStructure, 46, 30);
+  drawButterflies(ctx, distance, elapsed, env.darkness);
+  if (drawTreesArt(ctx, distance)) {
+    // A breath of haze over the near trees, so the busy painted bushes sit
+    // BEHIND the lane: hazards and Ellie must pop, the scenery must not.
+    const haze = ctx.createLinearGradient(0, GROUND_Y - 44, 0, GROUND_Y);
+    haze.addColorStop(0, alpha(PALETTE.skyBottom, 0));
+    haze.addColorStop(1, alpha(PALETTE.skyBottom, 0.32));
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, GROUND_Y - 44, SCREEN.w, 44);
+  } else {
+    drawHills(ctx, distance * 0.55, PALETTE.nearStructure, 62, 18);
+  }
+  if (drawGroundArt(ctx, distance)) {
+    // The lane line, faint: the ground line is where the whole game is read
+    // (decision 40), so it stays a crisp, light edge at every hour.
+    ctx.fillStyle = alpha(PALETTE.groundLine, 0.35 + env.darkness * 0.25);
+    ctx.fillRect(0, GROUND_Y, SCREEN.w, 1);
+  } else {
+    drawMeadow(ctx, distance, env.darkness);
+  }
+  return true;
 }
 
 /** Stars, fading in as the sky darkens. Deterministic; nothing allocates. */
@@ -300,7 +369,9 @@ function drawButterflies(
     if (night) {
       const pulse = 0.35 + Math.abs(Math.sin(elapsed * 2.3 + i * 1.7)) * 0.65;
       ctx.fillStyle = alpha(colour, 0.22 * pulse);
-      ctx.fillRect(Math.round(x) - 2, Math.round(y) - 2, 8, 7);
+      ctx.beginPath();
+      ctx.arc(Math.round(x) + 2, Math.round(y) + 1, 4, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = alpha(colour, 0.95 * pulse);
       ctx.fillRect(Math.round(x) + 1, Math.round(y), 2, 2);
       continue;
@@ -355,11 +426,13 @@ function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState, interpolati
   if (!player.dead && player.invulnerable && Math.floor(state.elapsed * 20) % 2 === 0) return;
 
   player.bounds(scratch, interpolation);
+  if (drawEllieArt(ctx, state, scratch)) return;
   const { x, y, w, h } = scratch;
 
   const dress = PALETTE.player;
   const trim = PALETTE.playerCore;
-  const hair = '#a8763f';
+  // Dark brown, to match the painted Ellie (and tower-defense's and slingshot's).
+  const hair = '#6b4426';
   const skin = '#f0c39a';
 
   if (player.dead) {
@@ -428,8 +501,9 @@ function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState, interpolati
   ctx.fillRect(x + 10, y + 5, 2, 2);
 }
 
-/** Sparkle bolts rather than laser bolts. */
+/** Sparkle bolts rather than laser bolts. Painted effects (pops, cheered-up clouds) ride on this layer. */
 function drawShots(ctx: CanvasRenderingContext2D, state: GameState, interpolation: number): void {
+  drawFxArt(ctx);
   for (const shot of state.shots.shots) {
     if (!shot.active) continue;
     const x = shot.prevX + (shot.x - shot.prevX) * interpolation;
@@ -456,15 +530,23 @@ function drawObstacles(
     const x = item.prevX + (item.x - item.prevX) * interpolation;
 
     if (item.deathTimer > 0) {
-      drawPuffAway(ctx, item, x);
+      // With art, the cloud has already turned happy and is floating away as
+      // an effect (juice.ts); the procedural puff is the no-art version.
+      if (!spriteFrames('cloud.happy')) drawPuffAway(ctx, item, x);
       continue;
     }
     switch (item.kind) {
       case 'spike':
-        drawLittleUnicorn(ctx, x, item, state.distance);
+        if (!drawUnicornArt(ctx, x, item, state)) {
+          trackCleared(item, x, state);
+          drawLittleUnicorn(ctx, x, item, state.distance);
+        }
         break;
       case 'beam':
-        drawCastle(ctx, x, item, state.elapsed);
+        if (!drawCastleArt(ctx, x, item, state)) {
+          trackCleared(item, x, state);
+          drawCastle(ctx, x, item, state.elapsed);
+        }
         break;
       case 'drone':
         drawRainCloud(ctx, x, item, state.elapsed);
@@ -626,6 +708,12 @@ function drawRainCloud(
     ctx.fillRect(dropX, dropY, 2, 6);
   }
 
+  // The painted cloud, with its hailstone plates in the rain just below it.
+  if (drawCloudArt(ctx, x - 3, item.y - 2, item.w + 6, bodyH + 1, tint, flashing, time * 1.5 + item.x * 0.01)) {
+    drawHailPlates(ctx, x, item, flashing);
+    return;
+  }
+
   // Backing puff in the rim colour, one pixel proud all round: an outline that
   // keeps the cloud's shape legible whatever the sky is doing behind it.
   ctx.fillStyle = alpha(rim, 0.85);
@@ -650,6 +738,7 @@ function drawSkyCloud(
   time: number,
 ): void {
   const flashing = item.hitFlash > 0;
+  if (drawCloudArt(ctx, x - 1, item.y - 1, item.w + 2, item.h, null, flashing, time * 1.5)) return;
   ctx.fillStyle = flashing ? '#ffffff' : PALETTE.drone;
   puff(ctx, x, item.y, item.w);
   ctx.fillStyle = alpha('#bfe4ff', 0.8);
@@ -682,6 +771,7 @@ function drawPickups(ctx: CanvasRenderingContext2D, state: GameState, interpolat
     const size = POWERUP.size;
     const colour = def.risky ? '#6d7690' : def.instant ? PALETTE.player : '#fff06a';
     const pulse = 0.6 + Math.sin(item.phase * 6) * 0.25;
+    if (drawPickupArt(ctx, item.kind, x, y, size, item.phase, def.risky)) continue;
 
     ctx.fillStyle = alpha('#ffffff', 0.3 * pulse);
     ctx.fillRect(x - 5, y - 5, size + 10, size + 10);
@@ -709,6 +799,7 @@ function drawBoss(ctx: CanvasRenderingContext2D, state: GameState, interpolation
   if (!boss.active) return;
 
   boss.bounds(scratch, interpolation);
+  if (drawBossArt(ctx, state, scratch)) return;
   const { x, y, w, h } = scratch;
   const flashing = boss.hitFlash > 0;
 

@@ -789,3 +789,130 @@ had been the one file that diverged.
 
 **Revisit if:** it diverges again. The next divergence is the argument for
 extracting the shared core into a package rather than copying it a fourth time.
+
+## 43. Painted art for the RAINBOW theme, on top of the procedural one
+
+**Decided:** the RAINBOW theme gets generated art (ART-PLAN.md), using the Gemini pipeline from
+`../tower-defense` and `../slingshot`: 14 images, about 1.9 MB after `npm run art:shrink`. NEON
+stays the procedural original. Asked for by Jonathan: "beautify their designs with some of the
+same lessons and animations as we did with tower defense and slingshot... Ellie does enjoy
+playing games that are fully immersive."
+
+**What carried over unchanged:** art sits on top and never replaces anything (every art function
+returns false and the procedural painter runs), one character is one image with all its poses,
+pose sheets face right and the unicorn is mirrored at load, chroma key flooded away in the
+browser (magenta for the green hills and trees, black + additive for the sparkle pop), `checkArt()`
+after every run. Decision 21's "sound is synthesised, never sampled" and decision 36's "no image
+files" are both superseded for the RAINBOW theme, for the reason tower-defense's decision 20
+gives: the person the game is for wanted it prettier.
+
+**What this game added, because its whole read is "which verb does this hazard want?":**
+
+- **Each verb keeps its colour family in the paintings too** (decision 37): white unicorn with a
+  purple mane = JUMP, pink castle with blue roofs on a cloud = SLIDE, grey cloud = SHOOT. The
+  first rain-cloud sheet came back with pastel rainbow puffs round its edge and was regenerated:
+  a cloud you shoot must be grey.
+- **Nothing in the backdrops answers a verb**: no castles, unicorns, horses or grey clouds,
+  stated in every world prompt, like slingshot's "nothing block-shaped".
+- **Hazards are fitted INSIDE their hitboxes** by their measured content, bottom-aligned
+  (decision 37's "a sprite may be smaller than its hitbox, never larger"). `__game.art.hitboxes()`
+  outlines every box over the art; the unicorn, castle, slide and cloud were all checked with it.
+  Ellie's slide frame is capped at 13.5 px tall under a 16 px castle gap, so a safe slide never
+  looks like a lucky one.
+- **Game state stays procedural:** the rain column (it is the hitbox), the armour plates, the
+  boss's core and the pickup glow. The plates moved from the cloud's body into the top of the
+  rain column, as hailstones, so the painted face stays visible and the 2–5 count stays countable.
+  Armour tiers multiply-tint the painted cloud, lighter for fewer plates.
+
+**Three art fixes worth remembering:**
+
+- Ellie's and the boss's first sheets came back with **captions under every figure** ("RUNNING",
+  "OPEN WIDE"). The cell lists began with capitalised labels, and the model wrote them. Cells are
+  now lower-case descriptions and the grid rules say "write NO words". The boss's second sheet
+  still has a tiny "ow!" in the bonked frame; it's harmless and was kept rather than paying for a
+  third roll.
+- The unicorn sheet came back with **black lines round the picture and every cell**, so the
+  corner pixels the loader keys on were black and every cell kept its green. `cutOutBackground`
+  now samples the key 1.2% in from each corner. The slicer's `CELL_INSET` already trims the lines.
+- The ground strip came back with **white sky between the grass blades**. Rather than a third
+  roll, each column is cleared from the top down to the first non-white pixel at load, so the
+  blades poke up over the trees.
+
+**Revisit if:** a hazard's painting stops being instantly one of three things at a glance. That
+is a broken game, not an ugly one, and the fix is the procedural version, not a prompt tweak.
+
+## 44. The painted world follows the day/night cycle
+
+**Decided:** three painted skies (day, dusk, night; dusk serves sunrise too) plus hills, trees and
+ground strips. Each environment in `unicorn.ts` names its sky and a multiply tint for the strips,
+and `updateEnvironment` crossfades both exactly as it blends the colours (decision 40). The sun,
+moon, stars, faint rainbow and fireworks stay procedural over the painted sky, because they're
+what the cycle animates: the procedural sun shows only over the day sky (dusk has its own painted
+sun), the moon only at night.
+
+The sky doesn't scroll: far mountains don't visibly move, and a scrolling sky would repeat its
+painted sun. Motion comes from the clouds lifted out of each sky and drifting (slingshot's
+`backdrop.ts`), the hills at 0.25, trees at 0.55 and the ground at 1.0. The strips are cropped to
+their content and tiled with every other copy mirrored, so the cut ends meet their own
+reflection. A light haze over the near trees keeps the busy bushes behind the lane.
+
+**`backdrop.ts` needed two fixes for skies this full of clouds.** Slingshot fitted each row on the
+pixels near that row's median colour; where clouds cover more than half a row the median *is*
+cloud, and the cleaned day sky had a white streak right across it. The sky model is now tracked
+down from the calmest row near the top, each row fitted only on pixels close to the row above's
+model. And the dusk clouds are nearly the sky's own colour, so only their outlines were detected
+and the lifted "clouds" were lines; enclosed holes in the mask are now filled.
+
+**At night** the strips are tinted indigo-grey, not near-black, and a faint light lane line is
+drawn at `GROUND_Y`: decision 40's rule that the ground line is where the game is read.
+
+## 45. Animation and juice live in render, fed by events
+
+**Decided:** `src/render/juice.ts` holds presentation-only state: "seconds since" timers (jump,
+land, shot, bump, cheer, boss cheered up) and a fixed pool of 24 effects (sparkle-pop flipbooks
+and cheered-up clouds). main.ts's event handler feeds it like it feeds the particles; `src/game`
+knows nothing about it, and `verify()` still passes 70/70.
+
+What it drives: Ellie's run frames by distance (decision 22's rule, so a faster world turns her
+legs over faster), jump/fall frames by vertical speed, stretch on take-off and squash on landing,
+the sparkle-cast pose for a beat after each shot, "oops!" with circling stars after a bump, a
+cheer when the Storm King cheers up, dust on landing and every other footfall, a ground shadow.
+The unicorn trots, then looks up delighted (or rears, or giggles) once she's over it; a cleared
+unicorn or castle sparkles. A shot cloud flinches and, cleared, turns white and happy and floats
+off in a rainbow pop: nobody is hurt. The boss's frames follow its phase; beaten, he waves and
+drifts away. Menus fade: the title dissolves into the run, the game-over card fades in.
+
+**Presentation now uses `Math.random`, not `state.rng`.** The event handler used to draw particle
+randomness from the seeded simulation stream, so adding a dust puff would have changed which
+hazards a seed produces. Cosmetics must never consume the simulation's randomness.
+
+**On RAINBOW the run ends with "OOPSIE!" and Ellie sitting down dizzy but grinning**, and the boss
+is the STORM KING who "cheered up", not a sentinel that went down. NEON keeps its words.
+
+## 46. Music, voices and new effects; SOUND and MUSIC muted separately
+
+**Decided:** slingshot's sound pipeline (`npm run sound`): four Lyria tracks (title, day, night,
+boss) and ten short TTS lines. The run plays day or night music with the cycle and the boss track
+while the Storm King is out; tracks crossfade, and each loops seamlessly from its steady part.
+Effects are rebuilt sample by sample in `src/core/sfx.ts` (bells for chimes and sparkles, a
+wobbling spring for the jump, swept noise for the slide, tiny thuds for footsteps) and everything
+goes through a compressor and a short procedural reverb.
+
+**Voices are few, short, and rate-limited** (slingshot's decision 18, and "characters shouldn't
+talk too much"). Ellie is Zephyr at rate 1 with slingshot's exact profile: *Let's go! Whee! Yay!
+Got it! Uh-oh! Woooow! Again!* The Storm King is Puck, sped up 1.3×: *Rumble rumble! Hey!
+Bye-bye!* `src/core/cast.ts` enforces a quiet gap per speaker (5 s for Ellie) and a chance per
+moment: a jump says "Whee!" 6% of the time, a cleared cloud speaks 20% of the time. Only the run
+starting and the boss arriving and leaving always speak.
+
+**SOUND and MUSIC are two toggles**, both remembered, on the title and game-over screens (`M` and
+`Shift+M` on a keyboard), because a parent may want the beeps without the tune or the reverse.
+The AudioContext is created on the first gesture, suspended when the tab is hidden and resumed
+when it's back.
+
+## 47. Dev tools for looking at art in a small pane
+
+`__game.pause()`, `__game.advance(seconds)` and `__game.render()` stage and draw a scene without
+`requestAnimationFrame`, which a hidden preview pane doesn't deliver; `__game.art.zoom()` blows a
+region of the frame up over the page; `__game.art.hitboxes()` outlines hitboxes;
+`__game.checkArt()` checks every sheet's grid. All dev-only, stripped from production.

@@ -27,7 +27,16 @@ const COLOURS = ['#ff8fae', '#fff06a', '#8fe08f', '#7fc7ff', '#c79bff', '#ffffff
 /** Lowest a burst is allowed to happen. The castle's roof reaches y≈128. */
 const BURST_FLOOR = 92;
 
-export function drawFireworks(ctx: CanvasRenderingContext2D, time: number, intensity: number): void {
+/**
+ * `round` draws the flash as a soft disc instead of a square: over the painted
+ * RAINBOW sky a square flash read as a box stuck on the picture.
+ */
+export function drawFireworks(
+  ctx: CanvasRenderingContext2D,
+  time: number,
+  intensity: number,
+  round = false,
+): void {
   if (intensity <= 0.02) return;
 
   for (let i = 0; i < SHELLS; i++) {
@@ -93,6 +102,17 @@ export function drawFireworks(ctx: CanvasRenderingContext2D, time: number, inten
     // The flash, which is what sells the bang.
     if (t < 0.22) {
       const flash = 1 - t / 0.22;
+      if (round) {
+        ctx.fillStyle = alpha(colour, flash * 0.35 * intensity);
+        ctx.beginPath();
+        ctx.arc(x, burstY, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = alpha('#ffffff', flash * intensity);
+        ctx.beginPath();
+        ctx.arc(x, burstY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
       ctx.fillStyle = alpha('#ffffff', flash * intensity);
       ctx.fillRect(Math.round(x) - 3, Math.round(burstY) - 3, 7, 7);
       ctx.fillStyle = alpha(colour, flash * 0.5 * intensity);

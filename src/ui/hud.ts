@@ -3,6 +3,10 @@ import type { GameState } from '../game/state';
 import { POWERUP_DEFS } from '../game/powerups';
 import { environment } from '../render/environment';
 import { PALETTE, alpha } from '../render/palette';
+import { activeTheme } from '../render/theme';
+
+/** The boss's name follows the theme: a neon sentinel, or the RAINBOW theme's grumpy Storm King. */
+const bossName = (): string => (activeTheme().id === 'unicorn' ? 'STORM KING' : 'SENTINEL');
 import { drawText } from './text';
 
 /**
@@ -100,7 +104,7 @@ function drawBossBar(ctx: CanvasRenderingContext2D, state: GameState): void {
   const gap = 1;
   const segW = (barW - gap * (segments - 1)) / segments;
 
-  drawText(ctx, 'SENTINEL', SCREEN.w / 2, y - 9, {
+  drawText(ctx, bossName(), SCREEN.w / 2, y - 9, {
     size: 8,
     color: PALETTE.drone,
     align: 'center',
@@ -140,7 +144,7 @@ function drawSectorAnnouncement(ctx: CanvasRenderingContext2D, state: GameState)
     const fade = Math.min(1, state.bossVictoryFlash / 0.5);
     ctx.save();
     ctx.globalAlpha = fade;
-    drawText(ctx, 'SENTINEL DOWN', SCREEN.w / 2, VIRTUAL_H / 2 - 30, {
+    drawText(ctx, activeTheme().id === 'unicorn' ? 'HE CHEERED UP!' : 'SENTINEL DOWN', SCREEN.w / 2, VIRTUAL_H / 2 - 30, {
       size: 20,
       color: PALETTE.shot,
       align: 'center',

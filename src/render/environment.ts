@@ -53,6 +53,15 @@ export interface Environment {
   moonY: number | null;
   /** Fireworks go up here. */
   fireworks?: boolean;
+
+  /**
+   * Painted art for this hour, if the theme has any: which sky picture, and a
+   * multiply tint for the painted hills, trees and ground. The cycle crossfades
+   * these exactly as it blends the colours, so painted and procedural worlds
+   * change time together.
+   */
+  sky?: string;
+  tint?: string;
 }
 
 /**
@@ -73,6 +82,12 @@ const live = {
   moonAlpha: 0,
   fireworks: 0,
   label: '',
+  /** Painted sky and tint crossfading from/to, and how far (0..1). */
+  skyFrom: '',
+  skyTo: '',
+  tintFrom: '#ffffff',
+  tintTo: '#ffffff',
+  artT: 0,
 };
 
 export type LiveEnvironment = typeof live;
@@ -116,6 +131,12 @@ export function updateEnvironment(list: readonly Environment[], elapsed: number)
   live.moonAlpha = lerp(current.moonY === null ? 0 : 1, next.moonY === null ? 0 : 1, t);
   live.moonY = lerp(current.moonY ?? next.moonY ?? 0, next.moonY ?? current.moonY ?? 0, t);
   live.fireworks = lerp(current.fireworks ? 1 : 0, next.fireworks ? 1 : 0, t);
+
+  live.skyFrom = current.sky ?? '';
+  live.skyTo = next.sky ?? '';
+  live.tintFrom = current.tint ?? '#ffffff';
+  live.tintTo = next.tint ?? '#ffffff';
+  live.artT = t;
 }
 
 /**

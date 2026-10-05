@@ -3,7 +3,8 @@
 An auto-runner with exactly three moves — **jump, shoot, slide** — where the whole game is the
 split-second question *"which one does this obstacle want?"*
 
-Two themes: **RAINBOW** (the default) and **NEON** (the original look). Switch on the title screen.
+Two themes: **RAINBOW** (the default, painted, with music and voices) and **NEON** (the original
+procedural look). Switch on the title screen.
 
 Every hazard has exactly one correct answer:
 
@@ -25,7 +26,28 @@ npm install && npm run dev
 ```
 
 Open the printed Network URL on your phone to play it on a real touchscreen. On desktop:
-arrows/WASD/space, `Z` to shoot.
+arrows/WASD/space, `Z` to shoot, `M` for sound and `Shift+M` for music.
+
+## Art, music and voices
+
+The RAINBOW theme is painted: Ellie, the unicorns, castles, rain clouds, the Storm King, the
+pickups, three skies that follow the day/night cycle, parallax hills, trees and ground, and a
+title picture. Music (title, day, night, boss) is from Lyria and a few short voice lines are from
+Gemini TTS; every sound effect is synthesised. [ART-PLAN.md](ART-PLAN.md) has the plan and the
+rules, which are mostly `../tower-defense`'s and `../slingshot`'s.
+
+**All of it is optional.** Delete `public/sprites/` or `public/sounds/` and the game is the
+procedural one it shipped as. To regenerate (needs a key in the gitignored `.env.local`, see
+`.env.example`):
+
+```bash
+npm run art          # images that are missing (--only=id, --force, --dry-run, --reindex)
+npm run art:shrink   # resample to display size (macOS sips)
+npm run sound        # voices and music that are missing
+```
+
+Then check the grids in the browser console: `__game.checkArt()`. `__game.art.hitboxes()` outlines
+every hitbox over the art: a painting may be smaller than its hitbox, never larger.
 
 ## Why it's built this way
 
@@ -34,7 +56,8 @@ changing anything structural. The short version follows.
 
 ## How it's built
 
-TypeScript and a 2D canvas, no engine, no runtime dependencies. The whole game is ~22 kB built.
+TypeScript and a 2D canvas, no engine, no runtime dependencies. The code is ~34 kB gzipped; the
+optional art and sound add about 1.9 MB and 1.5 MB.
 
 - **`src/game/`** — the simulation. Never imports from `src/render/`; it has no idea how it looks.
 - **`src/render/`** — drawing, behind a `Renderer` interface. The planned 16-bit pixel look is a
@@ -80,4 +103,5 @@ Playable and deployed: https://jonbcampos.github.io/runner-game/
 
 Core loop, authored pattern director, boss fights, seven powerups, drone armour tiers, two themes,
 a day/night cycle with fireworks, installable PWA with offline play. 70 automated design-contract
-checks.
+checks. The RAINBOW theme is painted and animated, with music, a few voice lines and synthesised
+effects (decisions 43–47).

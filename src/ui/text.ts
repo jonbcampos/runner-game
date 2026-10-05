@@ -18,6 +18,8 @@ export interface TextOptions {
   align?: CanvasTextAlign;
   glow?: boolean;
   bold?: boolean;
+  /** A thick outline under the fill, for text over a busy painted picture. */
+  outline?: string | undefined;
 }
 
 export function drawText(
@@ -25,10 +27,16 @@ export function drawText(
   text: string,
   x: number,
   y: number,
-  { size = 10, color = PALETTE.hudText as string, align = 'left', glow = false, bold = true }: TextOptions = {},
+  { size = 10, color = PALETTE.hudText as string, align = 'left', glow = false, bold = true, outline }: TextOptions = {},
 ): void {
   setFont(ctx, size, bold);
   ctx.textAlign = align;
+  if (outline) {
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = Math.max(2, size * 0.22);
+    ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, y);
+  }
   if (glow) {
     ctx.fillStyle = alpha(color, 0.35);
     ctx.fillText(text, x, y + 1);
